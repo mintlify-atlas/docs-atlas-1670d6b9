@@ -1,0 +1,101 @@
+{
+  "projectType": "cli-tool",
+  "projectName": "Groupchat",
+  "projectDescription": "Real-time messaging for developers in the terminal with embedded AI agents",
+  "theme": "aspen",
+  "primaryColor": "#10B981",
+  "lightColor": "#34D399",
+  "darkColor": "#059669",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Core Features",
+            "pages": [
+              "features/messaging",
+              "features/channels",
+              "features/direct-messages",
+              "features/ai-agents"
+            ]
+          },
+          {
+            "group": "Commands",
+            "pages": [
+              "commands/overview",
+              "commands/claude",
+              "commands/channel-management",
+              "commands/invites"
+            ]
+          },
+          {
+            "group": "Configuration",
+            "pages": [
+              "configuration/environment",
+              "configuration/profiles"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Development",
+        "groups": [
+          {
+            "group": "Architecture",
+            "pages": [
+              "development/architecture",
+              "development/project-structure"
+            ]
+          },
+          {
+            "group": "Extending",
+            "pages": [
+              "development/adding-agents",
+              "development/adding-commands",
+              "development/message-rendering"
+            ]
+          },
+          {
+            "group": "Contributing",
+            "pages": [
+              "development/setup",
+              "development/testing",
+              "development/building"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Real-time terminal-based messaging",
+    "Channel and direct message support",
+    "Embedded AI agents (Claude)",
+    "Live presence and typing indicators",
+    "Browser-based OAuth authentication",
+    "Keyboard-driven navigation",
+    "Channel administration and invites",
+    "Cross-platform native binaries"
+  ],
+  "publicApiSurface": [
+    "/claude - Enter Claude AI agent mode",
+    "/exit - Exit current agent mode",
+    "/invite <username> - Invite user to channel",
+    "/remove <username> - Remove user from channel",
+    "/invite_link - Create channel invite link",
+    "groupchat - Main CLI command",
+    "GROUPCHAT_CONSOLE_URL - Environment variable for console URL",
+    "GROUPCHAT_WS_URL - Environment variable for WebSocket URL",
+    "GROUPCHAT_PROFILE - Environment variable for profile selection",
+    "GROUPCHAT_DEBUG - Environment variable for debug mode"
+  ]
+}

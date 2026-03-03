@@ -1,0 +1,129 @@
+---
+title: Profile Management
+description: Use multiple Groupchat accounts with profile support
+---
+
+Groupchat CLI supports multiple profiles, allowing you to switch between different accounts without logging out.
+
+## Using Profiles
+
+### GROUPCHAT_PROFILE
+
+Set a profile name to isolate authentication credentials for different accounts.
+
+**Default:** Not set (uses default profile)
+
+```bash
+export GROUPCHAT_PROFILE=work
+groupchat
+```
+
+Each profile maintains its own authentication token, allowing you to stay logged in to multiple accounts simultaneously.
+
+## How It Works
+
+When you set `GROUPCHAT_PROFILE`, the CLI stores authentication credentials with a profile-specific identifier:
+
+- **Default profile:** `auth-credentials` (when `GROUPCHAT_PROFILE` is not set)
+- **Named profile:** `auth-credentials-{PROFILE}` (e.g., `auth-credentials-work`)
+
+## Token Storage
+
+Authentication tokens are securely stored in your operating system's keychain:
+
+- **macOS:** Keychain Access
+- **Linux:** Secret Service API (e.g., GNOME Keyring, KWallet)
+- **Windows:** Credential Manager
+
+The service name used for storage is `groupchat`.
+
+### Stored Information
+
+For each profile, the following information is stored:
+
+```json
+{
+  "token": "your-auth-token",
+  "expiresAt": "2026-03-03T12:00:00.000Z"
+}
+```
+
+Tokens are automatically validated on startup. If a token has expired, you'll be prompted to log in again.
+
+## Common Use Cases
+
+### Switch Between Work and Personal Accounts
+
+```bash
+# Use work account
+export GROUPCHAT_PROFILE=work
+groupchat
+
+# Use personal account
+export GROUPCHAT_PROFILE=personal
+groupchat
+
+# Use default account
+unset GROUPCHAT_PROFILE
+groupchat
+```
+
+### Create Shell Aliases
+
+Add to your `~/.bashrc` or `~/.zshrc`:
+
+```bash
+alias groupchat-work="GROUPCHAT_PROFILE=work groupchat"
+alias groupchat-personal="GROUPCHAT_PROFILE=personal groupchat"
+```
+
+Then simply run:
+
+```bash
+groupchat-work    # Opens work account
+groupchat-personal # Opens personal account
+```
+
+### Development Example
+
+From the package.json, here's how profiles are used during development:
+
+```bash
+# Default profile
+bun run src/index.tsx
+
+# Second user profile
+GROUPCHAT_PROFILE=user2 bun run src/index.tsx
+```
+
+## Profile Isolation
+
+Each profile is completely isolated:
+
+- Separate authentication tokens
+- Independent login sessions
+- No shared credentials between profiles
+
+<Note>
+  Profile names are case-sensitive. `work` and `Work` are treated as different profiles.
+</Note>
+
+## Security Considerations
+
+- Tokens are stored securely in your OS keychain, not in plain text files
+- Each profile's credentials are encrypted by the operating system
+- Expired tokens are automatically removed from storage
+- Logging out clears the token for the current profile only
+
+## Troubleshooting
+
+If you're having issues with authentication:
+
+1. Check which profile you're using:
+   ```bash
+   echo $GROUPCHAT_PROFILE
+   ```
+
+2. Clear credentials for the current profile by logging out within the app
+
+3. To manually clear all profiles, use your OS keychain manager and search for `groupchat` credentials

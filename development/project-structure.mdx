@@ -1,0 +1,485 @@
+---
+title: Project Structure
+description: Directory structure and code organization of the Groupchat CLI codebase
+---
+
+## Directory Overview
+
+```
+src/
+├── agent/              # Local AI agent integration
+├── auth/               # Authentication and token management
+├── components/         # Reusable UI components
+├── lib/                # Core utilities and business logic
+├── pages/              # Full-page views/screens
+├── primitives/         # Reusable SolidJS primitives/hooks
+├── stores/             # State management (contexts and providers)
+├── types/              # TypeScript type definitions
+└── index.tsx           # Application entry point
+```
+
+## Entry Point
+
+### `src/index.tsx`
+
+Application bootstrap file that:
+
+- Checks for interactive terminal (TTY)
+- Initializes runtime capabilities (detects available tools/binaries)
+- Performs background update checks
+- Clears terminal and renders the App component
+
+## Components (`src/components/`)
+
+Reusable UI components for building terminal interfaces.
+
+### Core Components
+
+- **`App.tsx`** - Root component with provider composition and routing
+  - Wraps entire app in nested providers (Auth → Channel → Chat → DM → StatusMessage)
+  - Implements global keyboard handlers (Ctrl+C, Ctrl+O, Escape)
+  - Routes to different page components based on current route
+  - Manages Warp Terminal compatibility adjustments
+
+- **`Router.tsx`** - Thin wrapper around NavigationProvider for routing
+
+### UI Components
+
+- **`Layout.tsx`** - Container component for consistent page layouts
+
+- **`MessageList.tsx`** - Scrollable list of messages
+  - Virtual scrolling for performance
+  - Auto-scroll behavior
+  - Detached scroll state tracking
+
+- **`MessageItem.tsx`** - Individual message rendering
+  - User messages with username and timestamp
+  - System messages
+  - Agent event messages
+  - Routes to agent-specific renderers
+
+- **`InputBox.tsx`** - Message input field
+  - Command detection and parsing
+  - Placeholder text
+  - Helper text display
+  - Input mode styling
+
+- **`CommandInputPanel.tsx`** - Command input with autocomplete
+  - Displays available commands
+  - Filters commands based on input
+  - Keyboard navigation (↑/↓/Enter)
+
+- **`StatusBar.tsx`** - Bottom status bar
+  - Connection status indicator
+  - Typing indicators
+  - Scroll position indicator
+  - Presence count
+
+- **`UserList.tsx`** - List of online users with presence
+  - User avatar/status indicators
+  - Sortable by status
+  - Used in channel views and DM inbox
+
+- **`AtAGlance.tsx`** - Quick stats display in menu
+  - Unread message counts
+  - Active user counts
+  - Channel activity summary
+
+- **`ToolTip.tsx`** - Tooltip/helper text display
+  - Context-sensitive help
+  - Command hints
+
+## Pages (`src/pages/`)
+
+Full-page views that compose multiple components into complete screens.
+
+### Page Components
+
+- **`LoginScreen.tsx`** - Device code authentication flow
+  - Displays auth code and URL
+  - Auto-opens browser for login
+  - Shows authentication status
+  - Loading state during auth
+
+- **`Menu.tsx`** - Main menu/channel selection
+  - Channel list with unread counts
+  - DM inbox access
+  - Global presence stats (At a Glance)
+  - Create channel option
+  - Keyboard navigation (j/k or ↑/↓)
+
+- **`ChatView.tsx`** - Channel message view
+  - Message list with scrolling
+  - Message input
+  - Typing indicators
+  - Presence sidebar
+  - Agent mode integration
+  - Command palette
+
+- **`CreateChannelScreen.tsx`** - Channel creation interface
+  - Channel name input
+  - Public/private selection
+  - User invitation (for private channels)
+  - Validation and error handling
+
+- **`DmInbox.tsx`** - Direct message conversations list
+  - List of DM conversations
+  - Unread indicators
+  - User search to start new DM
+  - Presence indicators
+
+- **`DmChatView.tsx`** - DM conversation view
+  - Similar to ChatView but for 1:1 messages
+  - DM-specific message sending
+  - Typing indicators
+  - Agent mode integration
+
+## Libraries (`src/lib/`)
+
+Core utilities, business logic, and shared functionality.
+
+### Communication & Networking
+
+- **`channel-manager.ts`** - Phoenix Channels WebSocket manager
+  - Multi-channel subscription management
+  - Connection lifecycle (connect, disconnect, reconnect)
+  - Message routing (active vs buffered channels)
+  - Presence tracking (per-channel and global)
+  - Typing indicators
+  - DM message routing via user channel
+  - Read receipts and unread tracking
+
+- **`chat-client.ts`** - HTTP API client for REST endpoints
+  - Fetch channel list
+  - Create channels
+  - Invite users
+  - User search
+  - DM operations
+
+- **`config.ts`** - Configuration management
+  - Environment variable loading
+  - Default values
+  - Console URL and WebSocket URL configuration
+
+### Commands & Input
+
+- **`commands.ts`** - Command definitions and metadata
+  - Available commands (e.g., `/invite`, `/claude`, `/exit`)
+  - Command metadata (description, category)
+  - Agent command helpers
+
+- **`command-parser.ts`** - Parse command strings
+  - Extract command name and arguments
+  - Validate command format
+
+- **`command-input.ts`** - Command input handling
+  - Command autocomplete
+  - Command execution
+  - Input validation
+
+- **`command-tooltip.ts`** - Command help/tooltip generation
+  - Generate tooltip text for commands
+  - Context-aware help
+
+### Message Processing
+
+- **`content-sanitizer.ts`** - Sanitize/clean message content
+  - Remove control characters
+  - Escape special characters
+  - Prevent rendering issues
+
+- **`dm-utils.ts`** - DM-related utilities
+  - Parse DM slugs
+  - Extract usernames from DM slugs
+  - DM conversation helpers
+
+### Presence & Status
+
+- **`presence-utils.ts`** - Phoenix Presence utilities
+  - Apply presence diffs
+  - Merge presence state
+  - Extract user list from presence
+
+- **`notification-manager.ts`** - Desktop notification management
+  - Trigger notifications for mentions
+  - New DM notifications
+  - System integration
+
+### UI Utilities
+
+- **`layout.ts`** - Layout calculation helpers
+  - Calculate dimensions
+  - Handle terminal resize
+  - Layout constraints
+
+- **`colors.ts`** - Color scheme definitions
+  - ANSI color codes
+  - Theme colors
+  - Syntax highlighting colors
+
+- **`input-mode.ts`** - Input mode types and utilities
+  - Normal mode vs agent mode
+  - Mode styling
+  - Mode transitions
+
+### Other Utilities
+
+- **`types.ts`** - Core TypeScript types
+  - Message types
+  - Channel types
+  - User types
+  - Presence types
+
+- **`constants.ts`** - Application constants
+  - Agent configuration (names, colors)
+  - Default values
+  - Magic numbers
+
+- **`utils.ts`** - General utilities
+  - Date/time formatting
+  - String manipulation
+  - Misc helpers
+
+- **`debounce.ts`** - Debounce utility for rate limiting
+
+- **`debug.ts`** - Debug logging utilities
+  - Conditional logging based on GROUPCHAT_DEBUG
+  - Structured log output
+
+- **`runtime-capabilities.ts`** - Runtime capability detection
+  - Detect available binaries (Claude, etc.)
+  - Platform detection
+  - Feature availability flags
+
+- **`update-checker.ts`** - Auto-update functionality
+  - Check npm for latest version
+  - Download and install updates
+  - Version comparison
+
+## Stores (`src/stores/`)
+
+State management using SolidJS Context API and reactive primitives.
+
+### Store Components
+
+- **`auth-store.tsx`** - Authentication state
+  - Auth state: `unauthenticated | authenticating | authenticated`
+  - Token storage and retrieval
+  - Login/logout methods
+  - Status messages during auth flow
+
+- **`channel-store.tsx`** - Channel list and state
+  - Available channels
+  - Current active channel
+  - Unread counts per channel
+  - Refetch channel list
+  - Increment unread on background messages
+
+- **`chat-store.tsx`** - Chat connection and messages
+  - ChannelManager instance
+  - Connection status
+  - Messages for current channel
+  - Send message method
+  - Typing indicators
+  - Presence state
+  - Global presence tracking
+
+- **`dm-store.tsx`** - Direct message state
+  - DM conversation list
+  - Unread DM counts
+  - Current DM conversation
+  - DM message history
+  - User search for new DMs
+
+- **`navigation-store.tsx`** - Routing state
+  - Current route
+  - Route history stack
+  - Navigate and back methods
+
+- **`status-message-store.tsx`** - Temporary status messages
+  - Queue of status messages
+  - Message types: `info | error | success`
+  - Auto-dismiss with timeout
+  - Push new status messages
+
+## Primitives (`src/primitives/`)
+
+Reusable SolidJS primitives (custom hooks) for common patterns.
+
+### Primitive Hooks
+
+- **`create-chat-view-base.ts`** - Base logic for chat views
+  - Agent mode management
+  - Message list combination (normal + agent)
+  - Scroll management
+  - Input routing (normal vs agent)
+  - Keyboard event handling
+  - Command handling
+  - Pending action management
+
+- **`create-multi-channel-chat.ts`** - Multi-channel chat primitive
+  - Initialize ChannelManager
+  - Subscribe to multiple channels
+  - Message routing to correct channel
+  - Unread count updates
+  - Connection lifecycle
+
+- **`create-agent-detection.ts`** - Agent presence detection
+  - Track when agents are active in channels
+  - Update global presence with current agent
+  - Broadcast agent mode to other users
+
+- **`use-command-input.ts`** - Command input handling
+  - Command parsing
+  - Command execution
+  - Command autocomplete state
+
+- **`use-user-search.ts`** - User search functionality
+  - Debounced search input
+  - API calls for user lookup
+  - Search results state
+
+- **`presence.ts`** - Presence tracking primitive
+  - Subscribe to presence updates
+  - Track online users
+  - User join/leave events
+
+## Agent System (`src/agent/`)
+
+Local AI agent integration system.
+
+### `src/agent/core/`
+
+Core agent system components.
+
+- **`types.ts`** - Agent type definitions
+  - `LocalAgentSession` interface
+  - `AgentEvent` types
+  - `AgentPendingAction` for permission requests
+
+- **`local-agent-sessions.ts`** - Agent registry
+  - Creates and registers all available agents
+  - Checks runtime capabilities for each agent
+  - Maps agent sessions to common interface
+
+- **`message-mutations.ts`** - Agent message processing
+  - Condense streaming agent events
+  - Merge related messages
+  - Prevent UI spam from rapid updates
+  - Route to agent-specific mutation logic
+
+- **`message-renderers.tsx`** - Agent message rendering
+  - Route messages to correct renderer based on type
+  - Support for nested rendering (sub-agents)
+  - Depth calculation for threading
+
+### `src/agent/claude/`
+
+Claude AI agent integration.
+
+- **`session.ts`** - Claude session implementation
+  - Implements `LocalAgentSession` interface
+  - Manages Claude process lifecycle
+  - Streams events from Claude
+  - Handles tool permissions
+
+- **`helpers.ts`** - Claude-specific utilities
+  - Message formatting
+  - Event parsing
+  - Error handling
+
+- **`claude-event-message-mutations.ts`** - Claude message mutations
+  - Condense Claude streaming events
+  - Group tool calls and results
+  - Update thinking indicators
+
+- **`components/ClaudeMessageItem.tsx`** - Claude message renderer
+  - Render Claude responses
+  - Tool call visualization
+  - Thinking indicators
+
+- **`components/ClaudeEventMessageItem.tsx`** - Claude event renderer
+  - Render streaming events
+  - Question/answer formatting
+  - Tool execution progress
+
+### `src/agent/AGENTS.md`
+
+Documentation for adding new agents to the system. See [Adding Agents](/development/adding-agents) for details.
+
+## Authentication (`src/auth/`)
+
+Authentication and credential management.
+
+- **`auth-manager.ts`** - Authentication orchestration
+  - Device code flow implementation
+  - Token acquisition and validation
+  - Browser opening for auth
+  - Polling for auth completion
+
+- **`token-storage.ts`** - Secure token persistence
+  - Platform-specific config directory detection
+  - Encrypted token storage
+  - Token retrieval and validation
+  - Multi-profile support (via GROUPCHAT_PROFILE env var)
+
+## Type Definitions (`src/types/`)
+
+Global TypeScript type definitions.
+
+- **`phoenix.d.ts`** - Phoenix Channels type definitions
+  - Socket types
+  - Channel types
+  - Event payload types
+
+## File Naming Conventions
+
+- **`.tsx`** - TypeScript files with JSX (components)
+- **`.ts`** - TypeScript files without JSX (logic, types)
+- **PascalCase** - Component files (e.g., `ChatView.tsx`)
+- **kebab-case** - Utility files (e.g., `channel-manager.ts`)
+- **lowercase** - Directories (e.g., `src/components/`)
+
+## Import Patterns
+
+### Relative Imports
+
+Components import from neighboring directories using relative paths:
+
+```typescript
+import { useAuth } from "../stores/auth-store"
+import { ChannelManager } from "../lib/channel-manager"
+import { Layout } from "../components/Layout"
+```
+
+### Type Imports
+
+Prefer type-only imports for better tree-shaking:
+
+```typescript
+import type { Message, Channel } from "../lib/types"
+import type { Accessor } from "solid-js"
+```
+
+## Testing Structure
+
+```
+test/
+├── components/    # Component tests
+├── lib/           # Library/utility tests
+└── pages/         # Page component tests
+```
+
+Tests use Bun's built-in test runner with `@opentui/solid/preload` for SolidJS testing support.
+
+## Build Output
+
+```
+dist/
+└── index.js       # Bundled executable
+
+bin/
+└── groupchat      # Shell wrapper script
+```
+
+The build process creates a standalone executable that includes all dependencies and can be distributed via npm.

@@ -1,0 +1,244 @@
+---
+title: Commands Overview
+description: Command system, syntax, validation, and autocomplete in Groupchat CLI
+---
+
+## Command System
+
+Groupchat CLI provides a powerful command system for interacting with channels, managing users, and entering agent modes. Commands are validated in real-time with autocomplete suggestions.
+
+## Command Syntax
+
+All commands start with a `/` prefix:
+
+```bash
+/command [parameters]
+```
+
+### Command Trigger Prefixes
+
+The system recognizes the following prefixes as command triggers:
+- `/` - Standard command prefix
+- `?` - Alternative command prefix
+
+Source: `src/lib/command-input.ts:3`
+
+## Command Phases
+
+The parser tracks command input through distinct phases:
+
+<ParamField path="phase" type="enum">
+  The current parsing phase:
+  - `none` - Not a command (doesn't start with `/`)
+  - `command` - Typing the command name
+  - `parameter` - Typing command parameters
+</ParamField>
+
+Source: `src/lib/command-parser.ts:29`
+
+## Parameter Types
+
+Commands support four parameter types with automatic validation:
+
+### Username Parameters
+
+<ParamField path="type" type="username">
+  Username parameter with configurable source and prefix
+  
+  **Properties:**
+  - `prefix` - Required prefix (e.g., `@`)
+  - `source` - User list to validate against:
+    - `all` - All present users
+    - `subscribed_without_self` - Channel members except current user
+    - `not_subscribed` - Users not in the channel
+    - `search` - Async search results
+  
+  **Validation:**
+  - Must match exact username from source list
+  - Case-insensitive matching
+  - Returns user_id and username
+</ParamField>
+
+Source: `src/lib/commands.ts:17-23`
+
+### Text Parameters
+
+<ParamField path="type" type="text">
+  Free-form text with optional length constraints
+  
+  **Properties:**
+  - `minLength` - Minimum character count (optional)
+  - `maxLength` - Maximum character count (optional)
+  
+  **Validation:**
+  - Checks length boundaries
+  - Returns error if constraints violated
+</ParamField>
+
+Source: `src/lib/commands.ts:25-29`
+
+### Number Parameters
+
+<ParamField path="type" type="number">
+  Numeric input with optional range constraints
+  
+  **Properties:**
+  - `min` - Minimum value (optional)
+  - `max` - Maximum value (optional)
+  
+  **Validation:**
+  - Must parse as valid number
+  - Checks range boundaries
+</ParamField>
+
+Source: `src/lib/commands.ts:31-35`
+
+### Choice Parameters
+
+<ParamField path="type" type="choice">
+  Restricted set of valid options
+  
+  **Properties:**
+  - `choices` - Array of allowed values
+  
+  **Validation:**
+  - Must match one of the choices exactly
+  - Case-insensitive matching
+  - Provides matching suggestions
+</ParamField>
+
+Source: `src/lib/commands.ts:37-40`
+
+## Autocomplete System
+
+The command system provides intelligent autocomplete suggestions:
+
+### Command-Level Autocomplete
+
+When typing a command name (phase: `command`):
+- Filters commands that start with the input
+- Shows all available commands when input is just `/`
+- Updates as you type
+
+Source: `src/lib/command-parser.ts:147-159`
+
+### Parameter-Level Autocomplete
+
+When typing parameters (phase: `parameter`):
+- Shows suggestions based on parameter type
+- Filters suggestions by current input
+- Updates dynamically for username/choice types
+
+Source: `src/lib/command-parser.ts:161-174`
+
+### Validation Context
+
+Autocomplete and validation use a context object:
+
+```typescript
+interface ValidationContext {
+  presentUsers: Array<{ username: string; user_id: number }>;
+  subscribedUsers: Array<{ username: string; user_id: number }>;
+  currentUsername: string | null;
+  asyncSearchResults?: Array<{ username: string; user_id: number }>;
+}
+```
+
+Source: `src/lib/commands.ts:52-57`
+
+## Command Validation
+
+Commands are validated in real-time as you type:
+
+<Steps>
+  <Step title="Parse Command Name">
+    Identify the command from registered commands
+  </Step>
+  
+  <Step title="Validate Required Parameters">
+    Ensure all required parameters are provided
+  </Step>
+  
+  <Step title="Validate Parameter Values">
+    Run type-specific validators on each parameter
+  </Step>
+  
+  <Step title="Generate Suggestions">
+    Provide autocomplete options based on current input
+  </Step>
+</Steps>
+
+Source: `src/lib/command-parser.ts:40-128`
+
+## Command Restrictions
+
+Commands can have access restrictions:
+
+<ParamField path="privateOnly" type="boolean">
+  When `true`, command only works in private/admin contexts
+</ParamField>
+
+<ParamField path="adminOnly" type="boolean">
+  When `true`, command requires admin permissions
+</ParamField>
+
+<ParamField path="channelOnly" type="boolean">
+  When `true`, command only available in channels (not DMs)
+</ParamField>
+
+Source: `src/lib/commands.ts:226-229`
+
+## Event System
+
+Each command maps to a Phoenix event:
+
+```typescript
+interface CommandPayload {
+  eventType: string;      // Phoenix event name
+  data: Record<string, unknown>; // Extracted parameters
+}
+```
+
+The parser extracts typed data from parameters and sends it to the backend.
+
+Source: `src/lib/command-parser.ts:183-246`
+
+## Error Handling
+
+Validation errors are surfaced immediately:
+
+- **Missing required parameters**: "[parameter] is required"
+- **Invalid username**: "User not found"
+- **Wrong prefix**: "Must start with [prefix]"
+- **Out of range**: "Minimum value is [min]" / "Maximum value is [max]"
+- **Invalid choice**: "Must be one of: [choices]"
+
+Source: `src/lib/commands.ts:83-215`
+
+## Available Commands
+
+Groupchat CLI currently supports these commands:
+
+<CardGroup cols={2}>
+  <Card title="/claude" icon="robot" href="/commands/claude">
+    Enter Claude Code agent mode
+  </Card>
+  
+  <Card title="/exit" icon="arrow-right-from-bracket" href="/commands/claude">
+    Exit current agent mode
+  </Card>
+  
+  <Card title="/invite" icon="user-plus" href="/commands/channel-management">
+    Invite users to the channel
+  </Card>
+  
+  <Card title="/remove" icon="user-minus" href="/commands/channel-management">
+    Remove users from the channel
+  </Card>
+  
+  <Card title="/invite_link" icon="link" href="/commands/invites">
+    Generate channel invite links
+  </Card>
+</CardGroup>
+
+Source: `src/lib/commands.ts:271-324`

@@ -1,0 +1,89 @@
+---
+title: 'Development Setup'
+description: 'Set up your local development environment for Groupchat'
+---
+
+## Prerequisites
+
+Groupchat requires Bun 1.0.0 or higher for development.
+
+```bash
+bun --version  # Should be >= 1.0.0
+```
+
+## Clone and Install
+
+Clone the repository and install dependencies:
+
+```bash
+git clone https://github.com/yourusername/groupchat.git
+cd groupchat
+bun install
+```
+
+## Running in Development Mode
+
+### Standard Watch Mode
+
+Run the application with automatic reloading on file changes:
+
+```bash
+bun run dev
+```
+
+This runs the command: `bun --watch run src/index.tsx`
+
+### Multiple User Profiles
+
+Test with different user profiles:
+
+<CodeGroup>
+
+```bash Default Profile
+bun run dev
+```
+
+```bash User2 Profile
+bun run dev:user2
+```
+
+</CodeGroup>
+
+The `dev:user2` script sets `GROUPCHAT_PROFILE=user2` for testing multi-user scenarios.
+
+## Debug Mode
+
+Groupchat provides several debug modes for development:
+
+<CodeGroup>
+
+```bash Debug (No Watch)
+bun run dev:debug
+```
+
+```bash Debug with Watch
+bun run dev:debug:watch
+```
+
+```bash Debug with Console Output
+bun run dev:debug:console
+```
+
+</CodeGroup>
+
+### Debug Environment Variables
+
+- `GROUPCHAT_DEBUG=1` - Enables debug logging to `.logs/tui-debug.log`
+- `SHOW_CONSOLE=true` - Shows console output in the terminal
+- `GROUPCHAT_PROFILE=<name>` - Sets a custom profile name for testing
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Testing" icon="flask" href="/development/testing">
+    Run tests and verify your changes
+  </Card>
+  <Card title="Building" icon="hammer" href="/development/building">
+    Build production binaries
+  </Card>
+</CardGroup>

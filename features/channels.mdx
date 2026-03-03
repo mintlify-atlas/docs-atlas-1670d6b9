@@ -1,0 +1,538 @@
+---
+title: Channels
+description: Channel structure, subscriptions, navigation, and unread count management
+---
+
+## Overview
+
+Channels are the core organizational unit in Groupchat CLI. Each channel represents a topic-based conversation space with its own message history, presence state, and subscriber list. Channels can be public (open to all) or private (invite-only).
+
+## Channel Types
+
+### Public Channels
+
+Public channels use the `public_room:` slug prefix:
+
+```typescript
+// Example: #general
+const slug = "public_room:general";
+```
+
+### Private Channels
+
+Private channels use the `private_room:` slug prefix and require subscription:
+
+```typescript
+// Example: #team-alpha
+const slug = "private_room:team-alpha";
+```
+
+<Info>
+Private channels maintain a subscriber list with role-based access (member or admin).
+</Info>
+
+## Channel Structure
+
+```typescript
+interface Channel {
+  slug: string;           // Unique identifier (e.g., "public_room:general")
+  name: string | null;    // Display name (e.g., "general")
+  type: string;           // "public" or "private"
+}
+
+interface Subscriber {
+  user_id: number;
+  username: string;
+  role: "member" | "admin";
+}
+```
+
+## Fetching Channels
+
+Retrieve the list of available channels:
+
+```typescript
+// From chat-client.ts:18
+export async function fetchChannels(
+  wsUrl: string,
+  token: string
+): Promise<ChannelsResponse> {
+  const backendUrl = wsUrl
+    .replace(/^wss:/, "https:")
+    .replace(/^ws:/, "http:")
+    .replace(/\/socket$/, "");
+  
+  const url = `${backendUrl}/api/channels`;
+  
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  
+  return response.json();
+}
+```
+
+<Tabs>
+  <Tab title="Usage">
+    ```typescript
+    const channels = await fetchChannels(
+      "wss://api.groupchatty.com/socket",
+      "your-auth-token"
+    );
+    
+    console.log("Public channels:", channels.public_channels);
+    console.log("Private channels:", channels.private_channels);
+    ```
+  </Tab>
+  
+  <Tab title="Response">
+    ```json
+    {
+      "public_channels": [
+        { "slug": "public_room:general", "name": "general", "type": "public" },
+        { "slug": "public_room:random", "name": "random", "type": "public" }
+      ],
+      "private_channels": [
+        { "slug": "private_room:team-alpha", "name": "team-alpha", "type": "private" }
+      ]
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Channel Subscriptions
+
+### Subscribing to Channels
+
+The ChannelManager maintains active subscriptions over a single WebSocket:
+
+```typescript
+// From channel-manager.ts:128
+async subscribeToChannels(channels: Channel[]): Promise<void> {
+  if (!this.socket) {
+    throw new Error("Socket not connected. Call connect() first.");
+  }
+  
+  const subscriptionPromises = channels.map((channel) =>
+    this.subscribeToChannel(channel.slug)
+  );
+  
+  // Wait for all channels to join (or fail)
+  const results = await Promise.allSettled(subscriptionPromises);
+  
+  // Log failures but don't throw - partial subscription is ok
+  results.forEach((result, index) => {
+    if (result.status === "rejected") {
+      const channelSlug = channels[index].slug;
+      console.error(`Failed to subscribe to ${channelSlug}:`, result.reason);
+    }
+  });
+}
+```
+
+### Internal Subscription Logic
+
+```typescript
+// From channel-manager.ts:271
+private async subscribeToChannel(channelSlug: string): Promise<void> {
+  const channel = this.socket.channel(channelSlug, {});
+  
+  const channelState: InternalChannelState = {
+    slug: channelSlug,
+    channel: channel,
+    presence: {},
+    typingUsers: new Set<string>(),
+    realtimeMessages: [],
+    subscribers: []
+  };
+  
+  // Store state BEFORE joining (for event handlers)
+  this.channelStates.set(channelSlug, channelState);
+  
+  // Setup event handlers
+  this.setupChannelHandlers(channel, channelSlug);
+  
+  return new Promise((resolve, reject) => {
+    channel.join()
+      .receive("ok", (resp) => {
+        this.callbacks.onChannelJoined?.(channelSlug, resp.username);
+        resolve();
+      })
+      .receive("error", (error) => {
+        this.channelStates.delete(channelSlug);
+        reject(error);
+      });
+  });
+}
+```
+
+<Note>
+Channel state is stored before joining to ensure event handlers (especially `presence_state`) can access it immediately.
+</Note>
+
+## Active Channel Management
+
+The ChannelManager tracks which channel is currently active for optimized message routing:
+
+```typescript
+// From channel-manager.ts:499
+async setActiveChannel(channelSlug: string): Promise<void> {
+  this.currentActiveChannel = channelSlug;
+  
+  // Auto-subscribe if not already subscribed
+  if (!this.channelStates.has(channelSlug)) {
+    try {
+      await this.subscribeToChannel(channelSlug);
+    } catch (err) {
+      console.error(`Failed to subscribe to ${channelSlug}:`, err);
+    }
+  }
+}
+```
+
+<Tabs>
+  <Tab title="Active Channel Behavior">
+    - Messages delivered immediately via callbacks
+    - Presence updates trigger UI refreshes
+    - Typing indicators shown in real-time
+    - Scroll position managed automatically
+  </Tab>
+  
+  <Tab title="Inactive Channel Behavior">
+    - Messages buffered in memory (max 100)
+    - Presence cached but not rendered
+    - Typing indicators tracked but not shown
+    - Unread counts incremented
+  </Tab>
+</Tabs>
+
+## Unread Counts
+
+### Fetching Unread Counts
+
+```typescript
+// From chat-client.ts:47
+export async function fetchUnreadCounts(
+  wsUrl: string,
+  token: string
+): Promise<UnreadCounts> {
+  const backendUrl = wsUrl
+    .replace(/^wss:/, "https:")
+    .replace(/^ws:/, "http:")
+    .replace(/\/socket$/, "");
+  
+  const url = `${backendUrl}/api/unread-counts`;
+  
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  
+  const data = await response.json();
+  return data.unread_counts || {};
+}
+```
+
+<CodeGroup>
+  ```typescript Response Format
+  type UnreadCounts = {
+    [channelSlug: string]: number;
+  };
+  
+  // Example:
+  {
+    "public_room:general": 5,
+    "private_room:team-alpha": 12,
+    "dm:alice": 3
+  }
+  ```
+  
+  ```typescript Usage
+  const counts = await fetchUnreadCounts(wsUrl, token);
+  const generalUnread = counts["public_room:general"] || 0;
+  ```
+</CodeGroup>
+
+### Marking Channels as Read
+
+When entering a channel, mark all messages as read:
+
+```typescript
+// From channel-manager.ts:881
+async markAllMessagesAsRead(channelSlug: string): Promise<void> {
+  const channelState = this.channelStates.get(channelSlug);
+  if (!channelState || !channelState.channel) return;
+  
+  return new Promise((resolve, reject) => {
+    channelState.channel.push("mark_all_read", {})
+      .receive("ok", (response) => resolve())
+      .receive("error", (err) => reject(err));
+  });
+}
+```
+
+When leaving a channel, mark up to the current position:
+
+```typescript
+// From channel-manager.ts:836
+async markChannelAsRead(channelSlug: string): Promise<void> {
+  const channelState = this.channelStates.get(channelSlug);
+  if (!channelState || !channelState.channel) return;
+  
+  return new Promise((resolve, reject) => {
+    channelState.channel.push("mark_as_read", {})
+      .receive("ok", (response) => resolve())
+      .receive("error", (err) => reject(err));
+  });
+}
+```
+
+<Warning>
+Best-effort variants exist for shutdown paths to avoid timeout issues: `markChannelAsReadBestEffort()`
+</Warning>
+
+## Subscriber Management
+
+### Fetching Subscribers
+
+Private channels maintain a subscriber list:
+
+```typescript
+// From channel-manager.ts:544
+async fetchSubscribers(channelSlug: string): Promise<Subscriber[]> {
+  // Only fetch for private channels
+  if (!channelSlug.startsWith("private_room:")) {
+    return [];
+  }
+  
+  const backendUrl = this.wsUrl
+    .replace(/^wss:/, "https:")
+    .replace(/^ws:/, "http:")
+    .replace(/\/socket$/, "");
+  
+  const encodedSlug = encodeURIComponent(channelSlug);
+  const url = `${backendUrl}/api/channels/${encodedSlug}/subscribers`;
+  
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${this.token}` }
+  });
+  
+  const data = await response.json();
+  const subscribers = data.subscribers || [];
+  
+  // Store in channel state
+  const channelState = this.channelStates.get(channelSlug);
+  if (channelState) {
+    channelState.subscribers = subscribers;
+  }
+  
+  return subscribers;
+}
+```
+
+### Real-time Subscriber Updates
+
+```typescript
+// From channel-manager.ts:431
+channel.on("user_invited", (payload) => {
+  const { user_id, username, role, invited_by } = payload;
+  
+  if (username === this.username) {
+    // You were invited
+    this.callbacks.onInvitedToChannel?.(channelSlug, invited_by);
+  } else {
+    // Someone else was invited - update subscribers
+    const channelState = this.channelStates.get(channelSlug);
+    if (channelState) {
+      const exists = channelState.subscribers.some(
+        (s) => s.user_id === user_id
+      );
+      if (!exists) {
+        channelState.subscribers.push({ user_id, username, role });
+      }
+    }
+  }
+});
+
+channel.on("user_removed", (payload) => {
+  const { user_id, username, removed_by } = payload;
+  
+  if (username === this.username) {
+    // You were removed - leave channel
+    channel.leave();
+    this.channelStates.delete(channelSlug);
+    this.callbacks.onRemovedFromChannel?.(channelSlug, removed_by);
+  } else {
+    // Update subscribers list
+    const channelState = this.channelStates.get(channelSlug);
+    if (channelState) {
+      channelState.subscribers = channelState.subscribers.filter(
+        (s) => s.user_id !== user_id
+      );
+    }
+  }
+});
+```
+
+## Creating Channels
+
+Create a new private channel:
+
+```typescript
+// From chat-client.ts:179
+export async function createChannel(
+  wsUrl: string,
+  token: string,
+  name: string,
+  description?: string
+): Promise<CreateChannelResponse> {
+  const backendUrl = wsUrl
+    .replace(/^wss:/, "https:")
+    .replace(/^ws:/, "http:")
+    .replace(/\/socket$/, "");
+  
+  const url = `${backendUrl}/api/channels`;
+  
+  const body = { name, description };
+  
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(body)
+  });
+  
+  if (!response.ok) {
+    const data = await response.json();
+    throw new Error(data.error || `Failed to create channel: ${response.status}`);
+  }
+  
+  return response.json();
+}
+```
+
+<Tabs>
+  <Tab title="Example">
+    ```typescript
+    const result = await createChannel(
+      wsUrl,
+      token,
+      "team-alpha",
+      "Private channel for Team Alpha"
+    );
+    
+    console.log("Created:", result.channel);
+    console.log("All channels:", result.channels);
+    ```
+  </Tab>
+  
+  <Tab title="Auto-Subscribe">
+    ```typescript
+    // From channel-manager.ts:251
+    this.userChannel.on("channel_added", (payload) => {
+      const { slug, name, type } = payload;
+      
+      // Auto-subscribe to new channel
+      if (!this.channelStates.has(slug)) {
+        this.subscribeToChannel(slug)
+          .then(() => {
+            this.callbacks.onChannelListChanged?.();
+          })
+          .catch((err) => {
+            console.error(`Failed to auto-subscribe to ${slug}:`, err);
+          });
+      }
+    });
+    ```
+  </Tab>
+</Tabs>
+
+## Channel Navigation
+
+From the ChatView component:
+
+```typescript
+// From ChatView.tsx:114
+let prevChannel: string | null = null;
+const markedAsReadOnEntry = new Set<string>();
+
+createEffect(() => {
+  const manager = chat.channelManager();
+  const currentChannel = channels.currentChannel();
+  
+  if (!manager) return;
+  
+  const markChannelAsRead = async (channelSlug: string, isEntry: boolean) => {
+    try {
+      if (isEntry) {
+        if (!markedAsReadOnEntry.has(channelSlug)) {
+          await manager.markAllMessagesAsRead(channelSlug);
+          markedAsReadOnEntry.add(channelSlug);
+        } else {
+          await manager.markChannelAsRead(channelSlug);
+        }
+      } else {
+        await manager.markChannelAsRead(channelSlug);
+      }
+      
+      await channels.refetchUnreadCounts();
+    } catch (err) {
+      console.error(`Failed to mark ${channelSlug} as read:`, err);
+    }
+  };
+  
+  if (currentChannel !== prevChannel) {
+    // Mark previous channel as read when leaving
+    if (prevChannel) {
+      void markChannelAsRead(prevChannel, false);
+    }
+    
+    // Mark new channel as read when entering
+    if (currentChannel) {
+      void markChannelAsRead(currentChannel, true);
+      channels.clearUnreadCount(currentChannel);
+    }
+    
+    prevChannel = currentChannel;
+  }
+});
+```
+
+<Info>
+First entry to a channel uses `markAllMessagesAsRead()`, subsequent entries use `markChannelAsRead()` to only mark new messages.
+</Info>
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Connection Management">
+    - Connect socket once, subscribe to all channels
+    - Handle partial subscription failures gracefully
+    - Clean up channel state on subscription errors
+  </Accordion>
+  
+  <Accordion title="Memory Optimization">
+    - Store channel state before joining for event handlers
+    - Limit buffered messages to 100 per inactive channel
+    - Clear buffers after merging with history
+  </Accordion>
+  
+  <Accordion title="Unread Tracking">
+    - Mark all as read on first channel entry
+    - Mark as read when leaving a channel
+    - Use best-effort marking during shutdown
+    - Refetch counts after marking operations
+  </Accordion>
+</AccordionGroup>
+
+## Related Documentation
+
+<CardGroup cols={2}>
+  <Card title="Messaging" icon="message" href="/features/messaging">
+    Real-time messaging and typing indicators
+  </Card>
+  <Card title="Direct Messages" icon="comment" href="/features/direct-messages">
+    One-on-one conversations
+  </Card>
+</CardGroup>

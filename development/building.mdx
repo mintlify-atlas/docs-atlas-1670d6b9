@@ -1,0 +1,117 @@
+---
+title: 'Building'
+description: 'Build production binaries for all platforms'
+---
+
+## Build Process
+
+Groupchat uses a two-phase build process to create platform-specific native binaries:
+
+1. **Phase 1**: Bundle the application with the Solid plugin
+2. **Phase 2**: Compile standalone binaries for each target platform
+
+## Building for Your Platform
+
+Build a binary for your current platform:
+
+```bash
+bun run build
+```
+
+This creates a native binary in `npm/<platform>-<arch>/bin/groupchat`
+
+## Building for All Platforms
+
+To build binaries for all supported platforms:
+
+```bash
+bun run build.ts --all
+```
+
+<Note>
+Building for all platforms requires installing cross-platform dependencies. The build script will automatically install missing `@opentui/core` packages for each target platform.
+</Note>
+
+## Supported Platforms
+
+Groupchat builds native binaries for the following platforms:
+
+<CardGroup cols={2}>
+  <Card title="macOS" icon="apple">
+    - darwin-arm64 (Apple Silicon)
+    - darwin-x64 (Intel)
+  </Card>
+  <Card title="Linux" icon="linux">
+    - linux-arm64
+    - linux-x64
+  </Card>
+  <Card title="Windows" icon="windows">
+    - win32-x64
+  </Card>
+</CardGroup>
+
+## Build Output
+
+Binaries are created in platform-specific directories:
+
+```
+npm/
+├── darwin-arm64/bin/groupchat
+├── darwin-x64/bin/groupchat
+├── linux-arm64/bin/groupchat
+├── linux-x64/bin/groupchat
+└── win32-x64/bin/groupchat.exe
+```
+
+## Build Script Details
+
+The build process (`build.ts`) performs the following steps:
+
+### Phase 1: Bundling
+
+- Bundles `src/index.tsx` using Bun's bundler
+- Applies the SolidJS plugin for JSX transformation
+- Minifies the output
+- Injects environment variables:
+  - `process.env.NODE_ENV = "production"`
+  - `process.env.__GROUPCHAT_VERSION__` (from package.json)
+- Outputs to `dist/index.js`
+
+### Phase 2: Compilation
+
+- For each target platform:
+  - Runs `bun build --compile` with platform-specific target
+  - Creates standalone executable with embedded runtime
+  - No external dependencies required at runtime
+
+## Pre-Publish Workflow
+
+The `prepublishOnly` script automatically runs before npm publish:
+
+```bash
+bun run prepublishOnly
+```
+
+This ensures:
+1. Type checking passes (`bun run typecheck`)
+2. Production build succeeds (`bun run build`)
+
+<Warning>
+The build must succeed before publishing to npm. Both type errors and build failures will prevent publication.
+</Warning>
+
+## Optional Dependencies
+
+The main package includes platform-specific packages as optional dependencies:
+
+```json
+"optionalDependencies": {
+  "@groupchat-cli/darwin-arm64": "0.1.7",
+  "@groupchat-cli/darwin-x64": "0.1.7",
+  "@groupchat-cli/linux-arm64": "0.1.7",
+  "@groupchat-cli/linux-x64": "0.1.7",
+  "@groupchat-cli/win32-x64": "0.1.7"
+}
+```
+
+Npm automatically installs only the binary matching the user's platform during installation.

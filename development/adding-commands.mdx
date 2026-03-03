@@ -1,0 +1,366 @@
+---
+title: Adding Commands
+description: Define new slash commands with parameters, validation, and event handling
+---
+
+Groupchat CLI supports extensible slash commands with typed parameters, validation, and autocomplete. This guide shows you how to define new commands.
+
+## Command Structure
+
+Commands are defined in `src/lib/commands.ts` using the `Command` interface:
+
+```typescript
+export interface Command {
+  name: string;           // e.g., "/invite"
+  syntax: string;         // e.g., "/invite user"
+  description: string;
+  privateOnly: boolean;
+  adminOnly?: boolean;
+  channelOnly?: boolean;  // Only available in channels, not DMs
+  parameters: CommandParameter[];
+  eventType: string;      // Phoenix event to send
+  localData?: Record<string, unknown>; // Static payload for local-only commands
+}
+```
+
+## Adding a Command
+
+<Steps>
+
+### Define the Command
+
+Add your command to the `COMMANDS` array in `src/lib/commands.ts`:
+
+```typescript
+export const COMMANDS: Command[] = [
+  // ... existing commands
+  {
+    name: "/topic",
+    syntax: "/topic <text>",
+    description: "Set the channel topic",
+    privateOnly: false,
+    adminOnly: true,
+    channelOnly: true,
+    parameters: [
+      {
+        name: "topic",
+        type: "text",
+        required: true,
+        minLength: 1,
+        maxLength: 200,
+      },
+    ],
+    eventType: "set_topic",
+  },
+]
+```
+
+### Handle the Event
+
+For server-side commands, handle the `eventType` in your Phoenix channel.
+
+For local-only commands (like agent commands), use the event type patterns:
+
+```typescript
+import { getAgentEnterCommandEvent, LOCAL_COMMAND_EVENTS } from "./commands"
+
+// Agent enter command
+{
+  name: "/claude",
+  eventType: getAgentEnterCommandEvent("claude"),
+}
+
+// Agent exit command (generic for all agents)
+{
+  name: "/exit",
+  eventType: LOCAL_COMMAND_EVENTS.agentExit,
+}
+```
+
+</Steps>
+
+## Parameter Types
+
+Groupchat CLI supports four parameter types with built-in validation and autocomplete:
+
+### Username Parameter
+
+Validates and autocompletes usernames from different sources:
+
+```typescript
+export interface UsernameParameter extends ParameterBase {
+  type: "username";
+  prefix: string;              // e.g., "@" or empty string
+  source: UsernameSource;      // Which user list to validate against
+}
+
+export type UsernameSource =
+  | "all"                        // All present users
+  | "subscribed_without_self"   // Channel members excluding current user
+  | "not_subscribed"            // Users not in the channel
+  | "search";                   // Async search results
+```
+
+**Example:**
+
+```typescript
+{
+  name: "user",
+  type: "username",
+  required: true,
+  prefix: "@",
+  source: "subscribed_without_self",
+  description: "User to remove from channel",
+}
+```
+
+**Validation behavior:**
+
+- Checks if username exists in the specified source
+- Provides autocomplete suggestions as user types
+- Normalizes input by removing the prefix for validation
+- Returns exact match requirement
+
+### Text Parameter
+
+Validates free-form text with optional length constraints:
+
+```typescript
+export interface TextParameter extends ParameterBase {
+  type: "text";
+  minLength?: number;
+  maxLength?: number;
+}
+```
+
+**Example:**
+
+```typescript
+{
+  name: "message",
+  type: "text",
+  required: true,
+  minLength: 1,
+  maxLength: 500,
+  description: "Message to send",
+}
+```
+
+**Validation behavior:**
+
+- Checks minimum length if specified
+- Checks maximum length if specified
+- Returns appropriate error messages
+
+### Number Parameter
+
+Validates numeric input with optional range constraints:
+
+```typescript
+export interface NumberParameter extends ParameterBase {
+  type: "number";
+  min?: number;
+  max?: number;
+}
+```
+
+**Example:**
+
+```typescript
+{
+  name: "count",
+  type: "number",
+  required: true,
+  min: 1,
+  max: 100,
+  description: "Number of messages to fetch",
+}
+```
+
+**Validation behavior:**
+
+- Checks if value is a valid number
+- Checks minimum value if specified
+- Checks maximum value if specified
+- Returns appropriate error messages
+
+### Choice Parameter
+
+Validates input against a predefined set of choices:
+
+```typescript
+export interface ChoiceParameter extends ParameterBase {
+  type: "choice";
+  choices: string[];
+}
+```
+
+**Example:**
+
+```typescript
+{
+  name: "visibility",
+  type: "choice",
+  required: true,
+  choices: ["public", "private", "unlisted"],
+  description: "Channel visibility",
+}
+```
+
+**Validation behavior:**
+
+- Checks if value exactly matches one of the choices (case-insensitive)
+- Provides autocomplete suggestions filtered by partial input
+- Returns error listing all valid choices
+
+## Validation System
+
+The validation system provides real-time feedback and autocomplete:
+
+```typescript
+export interface ValidationContext {
+  presentUsers: Array<{ username: string; user_id: number }>;
+  subscribedUsers: Array<{ username: string; user_id: number }>;
+  currentUsername: string | null;
+  asyncSearchResults?: Array<{ username: string; user_id: number }>;
+}
+
+export interface ValidationResult {
+  isValid: boolean;
+  error?: string;
+  suggestions?: string[];  // For autocomplete
+}
+```
+
+### Custom Validators
+
+Parameter validators are defined in the `parameterValidators` object:
+
+```typescript
+export const parameterValidators: Record<
+  ParameterType,
+  (value: string, param: CommandParameter, ctx: ValidationContext) => ValidationResult
+> = {
+  username: (value, param, ctx) => {
+    // ... validation logic
+  },
+  text: (value, param) => {
+    // ... validation logic
+  },
+  number: (value, param) => {
+    // ... validation logic
+  },
+  choice: (value, param) => {
+    // ... validation logic
+  },
+}
+```
+
+## Event Types
+
+Command event types determine how the command is processed:
+
+### Server Events
+
+Regular commands send events to the Phoenix channel:
+
+```typescript
+{
+  name: "/invite",
+  eventType: "invite_user",  // Handled by Phoenix channel
+}
+```
+
+### Local Agent Events
+
+Agent commands use special event type patterns:
+
+```typescript
+// Enter agent mode
+getAgentEnterCommandEvent("agent-id")  // Returns "local_agent_enter:agent-id"
+
+// Exit agent mode (generic)
+LOCAL_COMMAND_EVENTS.agentExit         // Returns "local_agent_exit"
+```
+
+**Utility functions:**
+
+```typescript
+// Parse agent ID from enter event
+parseAgentIdFromEnterEvent("local_agent_enter:claude")  // Returns "claude"
+
+// Check if event is an agent command
+isAgentEnterCommandEvent("local_agent_enter:claude")    // Returns true
+isAgentExitCommandEvent("local_agent_exit")            // Returns true
+isAgentCommandEvent(eventType)                          // Returns true for either
+
+// Get agent ID from command
+getCommandAgentId(command)                              // Returns agent ID or null
+```
+
+## Command Flags
+
+### privateOnly
+
+When `true`, the command is only available in private channels:
+
+```typescript
+{
+  privateOnly: true,  // Only in private channels
+}
+```
+
+### adminOnly
+
+When `true`, the command requires admin privileges:
+
+```typescript
+{
+  adminOnly: true,  // Only admins can use this command
+}
+```
+
+### channelOnly
+
+When `true`, the command is only available in channels, not DMs:
+
+```typescript
+{
+  channelOnly: true,  // Not available in DMs
+}
+```
+
+## Complete Example
+
+Here's a complete example of the `/remove` command:
+
+```typescript
+{
+  name: "/remove",
+  syntax: "/remove username",
+  description: "Remove a user from the channel",
+  privateOnly: true,      // Only in private channels
+  adminOnly: true,        // Only admins
+  channelOnly: true,      // Not in DMs
+  parameters: [
+    {
+      name: "user",
+      type: "username",
+      required: true,
+      prefix: "",         // No @ prefix
+      source: "subscribed_without_self",  // Only channel members except self
+      description: "User to remove",
+    },
+  ],
+  eventType: "remove_user",  // Phoenix channel event
+}
+```
+
+This command:
+
+1. Only works in private channels
+2. Requires admin privileges
+3. Not available in DMs
+4. Takes a required username parameter
+5. Validates against channel members (excluding current user)
+6. Sends a `remove_user` event to the Phoenix channel

@@ -1,0 +1,248 @@
+---
+title: Claude Agent Mode
+description: Enter Claude Code agent mode and interact with AI assistance in Groupchat CLI
+---
+
+## Overview
+
+The `/claude` command enters Claude Code agent mode, allowing you to interact with Claude AI directly within the chat interface. Use `/exit` to leave agent mode.
+
+## /claude Command
+
+Enter Claude Code agent mode.
+
+### Syntax
+
+```bash
+/claude
+```
+
+### Parameters
+
+No parameters required.
+
+### Restrictions
+
+<ParamField path="privateOnly" type="boolean" default="false">
+  Available in both public and private channels
+</ParamField>
+
+<ParamField path="adminOnly" type="boolean" default="false">
+  Available to all users
+</ParamField>
+
+<ParamField path="channelOnly" type="boolean" default="undefined">
+  Available in channels and DMs
+</ParamField>
+
+Source: `src/lib/commands.ts:272-280`
+
+### Event Type
+
+Triggers event: `local_agent_enter:claude-code`
+
+The event format is:
+```typescript
+const AGENT_ENTER_EVENT_PREFIX = "local_agent_enter:";
+const eventType = `${AGENT_ENTER_EVENT_PREFIX}${agentId}`;
+```
+
+Source: `src/lib/commands.ts:236-240`
+
+### Agent ID
+
+The Claude agent uses the ID `claude-code`, which is imported from:
+```typescript
+import { AGENT_ID as CC_AGENT_ID } from "../agent/claude/claude-event-message-mutations"
+```
+
+Source: `src/lib/commands.ts:7`
+
+### Example Usage
+
+<CodeGroup>
+```bash Basic
+/claude
+```
+
+```bash In Channel
+# In #general channel
+/claude
+# Now in Claude Code mode - messages go to Claude
+```
+
+```bash In DM
+# In direct message
+/claude
+# Agent mode activated
+```
+</CodeGroup>
+
+## /exit Command
+
+Exit the current agent mode and return to normal chat.
+
+### Syntax
+
+```bash
+/exit
+```
+
+### Parameters
+
+No parameters required.
+
+### Restrictions
+
+<ParamField path="privateOnly" type="boolean" default="false">
+  Available in both public and private channels
+</ParamField>
+
+<ParamField path="adminOnly" type="boolean" default="false">
+  Available to all users
+</ParamField>
+
+<ParamField path="channelOnly" type="boolean" default="undefined">
+  Available in channels and DMs
+</ParamField>
+
+Source: `src/lib/commands.ts:281-289`
+
+### Event Type
+
+Triggers event: `local_agent_exit`
+
+```typescript
+const AGENT_EXIT_EVENT = "local_agent_exit";
+```
+
+Source: `src/lib/commands.ts:237`
+
+### Example Usage
+
+<CodeGroup>
+```bash Exit Mode
+# While in Claude Code mode
+/exit
+# Returns to normal chat
+```
+
+```bash Complete Session
+/claude
+# ... interact with Claude ...
+/exit
+```
+</CodeGroup>
+
+## Agent Mode System
+
+The agent system uses local event handling:
+
+### Event Detection
+
+The system provides helpers to detect agent-related events:
+
+```typescript
+// Check if event enters an agent
+isAgentEnterCommandEvent(eventType: string): boolean
+
+// Check if event exits an agent
+isAgentExitCommandEvent(eventType: string): boolean
+
+// Check if event is any agent command
+isAgentCommandEvent(eventType: string): boolean
+```
+
+Source: `src/lib/commands.ts:242-255`
+
+### Extract Agent ID
+
+Get the agent ID from an enter event:
+
+```typescript
+parseAgentIdFromEnterEvent(eventType: string): string | null
+
+// Example:
+parseAgentIdFromEnterEvent("local_agent_enter:claude-code")
+// Returns: "claude-code"
+```
+
+Source: `src/lib/commands.ts:242-246`
+
+### Command Helpers
+
+Check if a command is agent-related:
+
+```typescript
+// Check if command is an agent command
+isAgentCommand(command: Pick<Command, "eventType">): boolean
+
+// Get agent ID from command
+getCommandAgentId(command: Pick<Command, "eventType">): string | null
+```
+
+Source: `src/lib/commands.ts:261-265`
+
+## Local Command Events
+
+Agent commands use local event constants:
+
+```typescript
+export const LOCAL_COMMAND_EVENTS = {
+  agentExit: AGENT_EXIT_EVENT,
+} as const
+```
+
+Source: `src/lib/commands.ts:257-259`
+
+## Agent Interaction Flow
+
+<Steps>
+  <Step title="Enter Agent Mode">
+    User types `/claude` and presses Enter
+    
+    System sends `local_agent_enter:claude-code` event
+  </Step>
+  
+  <Step title="Agent Active">
+    All subsequent messages route to Claude
+    
+    UI indicates agent mode is active
+  </Step>
+  
+  <Step title="Exit Agent Mode">
+    User types `/exit` and presses Enter
+    
+    System sends `local_agent_exit` event
+  </Step>
+  
+  <Step title="Normal Chat Resumed">
+    Messages return to normal channel behavior
+  </Step>
+</Steps>
+
+## Implementation Notes
+
+### Command Definitions
+
+Both commands have minimal definitions:
+- No parameters
+- No restrictions (available to all)
+- Local event handling (not server-side)
+
+Source: `src/lib/commands.ts:272-289`
+
+### Validation
+
+Since these commands have no parameters:
+- Always valid when command name is complete
+- No autocomplete suggestions needed
+- Instant execution on Enter
+
+Source: `src/lib/command-parser.ts:72-81`
+
+## Related Commands
+
+<Card title="Commands Overview" icon="list" href="/commands/overview">
+  Learn about the command system, validation, and autocomplete
+</Card>

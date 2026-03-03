@@ -1,0 +1,326 @@
+---
+title: Invite Links
+description: Create and share channel invite links using the /invite_link command
+---
+
+## Overview
+
+The `/invite_link` command generates shareable invite links for channels. Unlike `/invite` which requires specifying a username, invite links can be shared with anyone.
+
+## /invite_link Command
+
+Create an invite link for the current channel.
+
+### Syntax
+
+```bash
+/invite_link
+```
+
+### Parameters
+
+No parameters required.
+
+Source: `src/lib/commands.ts:321`
+
+### Restrictions
+
+<ParamField path="privateOnly" type="boolean" default="true">
+  Only works in private/admin contexts
+</ParamField>
+
+<ParamField path="adminOnly" type="boolean" default="false">
+  Available to all channel members (not admin-only)
+</ParamField>
+
+<ParamField path="channelOnly" type="boolean" default="true">
+  Only available in channels, not DMs
+</ParamField>
+
+Source: `src/lib/commands.ts:318-320`
+
+### Event Type
+
+Triggers event: `create_invite_link`
+
+Source: `src/lib/commands.ts:322`
+
+### Payload
+
+The command sends minimal data:
+
+```typescript
+{
+  eventType: "create_invite_link",
+  data: {}  // No parameters, server uses channel context
+}
+```
+
+The server determines the channel from the current context.
+
+Source: `src/lib/command-parser.ts:188-196`
+
+### Example Usage
+
+<CodeGroup>
+```bash Basic
+/invite_link
+```
+
+```bash In Channel
+# In #engineering channel
+/invite_link
+# Server generates: https://groupchat.app/invite/abc123xyz
+```
+
+```bash Complete Flow
+# Create link
+/invite_link
+
+# System responds with generated link
+# Share link with new members
+# They click and join the channel
+```
+</CodeGroup>
+
+## Command Characteristics
+
+### No Parameters
+
+Since this command has no parameters:
+- Always valid once command name is complete
+- No autocomplete suggestions
+- Instant execution on Enter
+
+Source: `src/lib/command-parser.ts:72-81`
+
+### Validation
+
+The command validates successfully as soon as the full command name is typed:
+
+```typescript
+// Command found but no space yet (still typing command)
+if (spaceIndex === -1) {
+  const hasRequiredParams = command.parameters.some(p => p.required);
+  return {
+    command,
+    phase: "command",
+    parameterValues: new Map(),
+    parameterResults: new Map(),
+    isValid: !hasRequiredParams, // Valid since no required params
+  };
+}
+```
+
+Source: `src/lib/command-parser.ts:72-81`
+
+### Context-Based
+
+The server uses the current channel context to:
+1. Identify which channel to create the link for
+2. Generate a unique invite token
+3. Return the shareable URL
+
+## Permission Model
+
+Key difference from `/invite` and `/remove`:
+
+| Command | Admin Only |
+|---------|------------|
+| `/invite` | Yes (`true`) |
+| `/remove` | Yes (`true`) |
+| `/invite_link` | No (`false`) |
+
+**Any channel member** can create invite links, not just admins.
+
+Source: `src/lib/commands.ts:294-320`
+
+## Use Cases
+
+### When to Use /invite_link
+
+<AccordionGroup>
+  <Accordion title="Sharing outside the application">
+    When inviting people who don't have accounts yet:
+    
+    ```bash
+    /invite_link
+    # Share link via email, Slack, etc.
+    ```
+  </Accordion>
+  
+  <Accordion title="Bulk invitations">
+    When inviting multiple people at once:
+    
+    ```bash
+    /invite_link
+    # Post link in team chat
+    # Everyone can use the same link
+    ```
+  </Accordion>
+  
+  <Accordion title="Non-admin members inviting">
+    When non-admins need to invite others:
+    
+    ```bash
+    # Regular member (not admin)
+    /invite_link
+    # Can create link even without admin role
+    ```
+  </Accordion>
+  
+  <Accordion title="Permanent invite option">
+    When you want a reusable invitation method:
+    
+    ```bash
+    /invite_link
+    # Save link for future use
+    # Share with new team members as they join
+    ```
+  </Accordion>
+</AccordionGroup>
+
+### When to Use /invite
+
+<AccordionGroup>
+  <Accordion title="Inviting existing users">
+    When the person already has an account:
+    
+    ```bash
+    /invite alice
+    # Directly adds alice to channel
+    ```
+  </Accordion>
+  
+  <Accordion title="Admin-controlled membership">
+    When you want admin oversight:
+    
+    ```bash
+    # Only admins can use /invite
+    /invite bob
+    ```
+  </Accordion>
+  
+  <Accordion title="Immediate access">
+    When you want instant channel access:
+    
+    ```bash
+    /invite charlie
+    # charlie is immediately subscribed
+    # No link clicking required
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Comparison: /invite vs /invite_link
+
+| Feature | /invite | /invite_link |
+|---------|---------|-------------|
+| **Parameters** | `username` (required) | None |
+| **Admin Only** | Yes | No |
+| **User Must Exist** | Yes (search-based) | No |
+| **Shareable** | No | Yes |
+| **Autocomplete** | Yes (username search) | No |
+| **Validation** | Username must match | Always valid |
+| **Use Case** | Direct invitation | Link sharing |
+| **Event** | `invite_user` | `create_invite_link` |
+
+Source: `src/lib/commands.ts:291-322`
+
+## Implementation Details
+
+### Command Definition
+
+```typescript
+{
+  name: "/invite_link",
+  syntax: "/invite_link",
+  description: "Create an invite link for this channel",
+  privateOnly: true,
+  adminOnly: false,  // Key difference: not admin-only
+  channelOnly: true,
+  parameters: [],     // No parameters required
+  eventType: "create_invite_link",
+}
+```
+
+Source: `src/lib/commands.ts:314-323`
+
+### Event Payload
+
+Since there are no parameters, the payload is minimal:
+
+```typescript
+function extractCommandPayload(parsed: ParsedCommand, ctx: ValidationContext) {
+  if (!parsed.command || !parsed.isValid) {
+    return null;
+  }
+
+  const data: Record<string, unknown> = {};
+
+  // No parameters to process for /invite_link
+  // Loop runs zero times
+
+  return {
+    eventType: "create_invite_link",
+    data: {}, // Empty data object
+  };
+}
+```
+
+Source: `src/lib/command-parser.ts:188-246`
+
+## Channel Context Requirement
+
+The command requires channel context:
+
+```typescript
+channelOnly: true
+```
+
+This means:
+- Command fails in DMs
+- Must be used within a channel
+- Server determines which channel from context
+
+Source: `src/lib/commands.ts:320`
+
+## Private Context Requirement
+
+The command requires private context:
+
+```typescript
+privateOnly: true
+```
+
+This likely means:
+- Only works in private channels or admin views
+- May not work in public channels
+- Implementation detail depends on application's privacy model
+
+Source: `src/lib/commands.ts:318`
+
+## Error Scenarios
+
+Potential error cases:
+
+| Scenario | Expected Behavior |
+|----------|------------------|
+| Used in DM | Command rejected (channelOnly) |
+| Used in public channel | May be rejected (privateOnly) |
+| Server error | Link generation fails |
+| No channel context | Command unavailable |
+
+Note: The validation happens at the application level based on the `channelOnly` and `privateOnly` flags.
+
+## Related Commands
+
+<CardGroup cols={2}>
+  <Card title="Channel Management" icon="users" href="/commands/channel-management">
+    Direct user invitations with /invite and /remove
+  </Card>
+  
+  <Card title="Commands Overview" icon="list" href="/commands/overview">
+    Learn about the command system and validation
+  </Card>
+</CardGroup>

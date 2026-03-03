@@ -1,0 +1,392 @@
+---
+title: Architecture
+description: Technical architecture, tech stack, and design patterns used in Groupchat CLI
+---
+
+## Overview
+
+Groupchat CLI is a terminal-based chat application built with modern web technologies adapted for the terminal environment. The application uses reactive programming patterns, real-time WebSocket communication, and a component-based architecture.
+
+## Tech Stack
+
+### Core Framework
+
+- **@opentui/solid** - Terminal UI framework built on SolidJS reactive primitives
+- **SolidJS** - Fine-grained reactive JavaScript library for building user interfaces
+- **Bun** - Fast JavaScript runtime and build tool
+- **TypeScript** - Type-safe JavaScript with static typing
+
+### Real-time Communication
+
+- **Phoenix Channels** - WebSocket-based real-time communication protocol
+- **phoenix** npm package - JavaScript client for Phoenix channels
+- **WebSocket** - Bidirectional communication with the backend server
+
+### Build & Runtime
+
+- **Bun** - Used for development, testing, and building the distributable binary
+- **dotenv** - Environment variable management for configuration
+- **open** - Cross-platform module for opening URLs in the browser (used for auth flow)
+
+## Architecture Layers
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                        Entry Point                          │
+│                     src/index.tsx                           │
+│   - Terminal check                                          │
+│   - Runtime capabilities initialization                     │
+│   - Auto-update check                                       │
+│   - App rendering                                           │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                      Component Layer                         │
+│                  src/components/App.tsx                      │
+│   - Provider composition (Auth, Channel, Chat, DM, Status)  │
+│   - Router integration                                       │
+│   - Global keyboard handlers (Ctrl+C, Ctrl+O, Escape)       │
+│   - Route-based view rendering                              │
+└─────────────────────────────────────────────────────────────┘
+                              │
+          ┌───────────────────┼───────────────────┐
+          ▼                   ▼                   ▼
+    ┌──────────┐      ┌──────────┐        ┌──────────┐
+    │  Stores  │      │  Pages   │        │Primitives│
+    └──────────┘      └──────────┘        └──────────┘
+```
+
+## Component Architecture
+
+### Provider Hierarchy
+
+The application uses a nested provider pattern to manage different domains of state:
+
+```tsx
+<AuthProvider autoCheck>
+  <ChannelProvider>
+    <ChatProvider>
+      <DmProvider>
+        <StatusMessageProvider>
+          <Router initialRoute="menu">
+            <AppContent />
+          </Router>
+        </StatusMessageProvider>
+      </DmProvider>
+    </ChatProvider>
+  </ChannelProvider>
+</AuthProvider>
+```
+
+Each provider manages its own domain:
+
+- **AuthProvider** - Authentication state, login/logout, token management
+- **ChannelProvider** - Channel list, current channel, unread counts
+- **ChatProvider** - WebSocket connection, message state, presence tracking
+- **DmProvider** - Direct message conversations and state
+- **StatusMessageProvider** - Temporary status messages (info, error, success)
+- **Router** - Navigation state and route management
+
+### View Components
+
+The application renders different views based on the current route:
+
+- **LoginScreen** - Device code authentication flow (src/pages/LoginScreen.tsx:83)
+- **Menu** - Main channel/DM selection interface (src/pages/Menu.tsx:90)
+- **ChatView** - Channel message view with message list and input (src/pages/ChatView.tsx:94)
+- **CreateChannelScreen** - Channel creation interface (src/pages/CreateChannelScreen.tsx:98)
+- **DmInbox** - Direct message conversation list (src/pages/DmInbox.tsx:102)
+- **DmChatView** - DM conversation view (src/pages/DmChatView.tsx:106)
+
+## State Management
+
+### Reactive State with SolidJS
+
+The application uses SolidJS reactive primitives for state management:
+
+- **createSignal** - For simple reactive values that update the UI
+- **createMemo** - For derived/computed values
+- **createEffect** - For side effects that respond to state changes
+- **createStore** - For complex nested state objects (used in navigation)
+
+Example from src/stores/auth-store.tsx:29:
+
+```tsx
+const [authState, setAuthState] = createSignal<AuthState>("unauthenticated")
+const [authStatus, setAuthStatus] = createSignal("")
+const [token, setToken] = createSignal<string | null>(null)
+```
+
+### Context-Based State Sharing
+
+Each store creates a context that components can access via hooks:
+
+```tsx
+const ChatContext = createContext<ChatStoreValue>()
+
+export const useChatStore = () => {
+  const context = useContext(ChatContext)
+  if (!context) throw new Error("Must be used within ChatProvider")
+  return context
+}
+```
+
+## Real-time Communication
+
+### Phoenix Channel Manager
+
+The `ChannelManager` class (src/lib/channel-manager.ts) is the core of real-time communication:
+
+**Key Responsibilities:**
+
+1. **WebSocket Connection Management**
+   - Single persistent Socket connection
+   - Automatic reconnection with exponential backoff
+   - Connection status tracking
+
+2. **Multi-Channel Subscription**
+   - Subscribe to multiple channels simultaneously
+   - Track per-channel state (messages, presence, typing indicators)
+   - Route events to the correct channel state
+
+3. **Active Channel Pattern**
+   - Immediate message delivery to active channel
+   - Message buffering for non-active channels (up to 100 messages)
+   - Prevents memory leaks from unbounded message accumulation
+
+4. **Presence Tracking**
+   - Per-channel presence state
+   - Global presence via `public:status` channel
+   - Real-time updates via `presence_diff` events
+
+5. **Direct Messaging**
+   - User-specific channel (`user:{userId}`)
+   - DM message routing
+   - DM typing indicators
+
+**Channel State Structure** (src/lib/channel-manager.ts:23):
+
+```typescript
+interface InternalChannelState {
+  slug: string                    // Channel identifier
+  channel: PhoenixChannel         // Phoenix channel instance
+  presence: PresenceState         // Who's online in this channel
+  typingUsers: Set<string>        // Users currently typing
+  realtimeMessages: Message[]     // Buffered messages (max 100)
+  subscribers: Subscriber[]       // Channel members (private channels)
+}
+```
+
+### Message Flow
+
+```
+User Input → sendMessage() → Phoenix Channel → Backend
+                                                    ↓
+Backend → "new_message" event → ChannelManager → Active Channel?
+                                                    ├─ Yes: onMessage callback
+                                                    └─ No: Buffer in realtimeMessages
+```
+
+## Agent System Design
+
+### Local Agent Architecture
+
+The agent system allows local AI assistants (like Claude) to participate in chat conversations.
+
+**Core Components:**
+
+1. **Agent Registry** (src/agent/core/local-agent-sessions.ts)
+   - Central registry of available agents
+   - Runtime capability detection
+   - Session lifecycle management
+
+2. **Agent Session Interface** (src/agent/core/types.ts:26)
+   ```typescript
+   type LocalAgentSession = {
+     isActive: Accessor<boolean>
+     isConnecting: Accessor<boolean>
+     messages: Accessor<Message[]>
+     start: () => Promise<void>
+     stop: (reason?: string) => void
+     sendMessage: (content: string, username: string) => Promise<void>
+     appendError: (message: string) => void
+     interrupt?: () => void
+     pendingAction?: () => AgentPendingAction | null
+     respondToPendingAction?: (decision: AgentDecision) => Promise<void>
+   }
+   ```
+
+3. **Chat View Base Primitive** (src/primitives/create-chat-view-base.ts)
+   - Manages active agent mode state
+   - Routes input to agent or normal chat
+   - Handles agent-specific keyboard shortcuts
+   - Merges agent messages with chat messages
+
+### Agent Lifecycle
+
+1. **Initialization**
+   - Runtime capabilities detected (e.g., `hasClaude` checks for Claude binary)
+   - Agent sessions created and registered
+   - Event bridges bound for streaming events
+
+2. **Activation**
+   - User enters agent mode via command (e.g., `/claude`)
+   - Session `start()` method called
+   - Input mode switches to agent mode with custom styling
+
+3. **Communication**
+   - User messages routed to agent session
+   - Agent events streamed via `onEvent` callback
+   - Events sent to backend via `sendAgentEvent()`
+   - Server broadcasts to other users in channel
+
+4. **Deactivation**
+   - User types `/exit` or agent completes
+   - Session `stop()` method called
+   - Input mode returns to normal
+
+### Agent Event Flow
+
+```
+Agent Session → onEvent(event) → Event Bridge → channelManager.sendAgentEvent()
+                                                        ↓
+                                              Phoenix Channel (type: "cc")
+                                                        ↓
+                                                  Backend Server
+                                                        ↓
+                                        Broadcast to all channel members
+                                                        ↓
+                            Rendered via message-renderers.tsx
+```
+
+### Agent Message Types
+
+Agents can emit different event types (src/agent/core/types.ts:16):
+
+- **question** - User query to the agent
+- **tool_call** - Agent invoking a tool
+- **text** - Agent response text (streaming)
+- **result** - Final result of a tool call
+
+### Agent Permissions
+
+Agents can request user permission before taking actions:
+
+- UI shows pending action with Allow/Deny options
+- User navigates with ↑/↓ and confirms with Enter
+- Response sent back to agent session
+- Agent proceeds or cancels based on decision
+
+## Routing & Navigation
+
+Routing is managed by the NavigationProvider (src/stores/navigation-store.tsx):
+
+```typescript
+type Route = "login" | "menu" | "chat" | "create-channel" | "dm-inbox" | "dm-chat"
+```
+
+**Navigation Methods:**
+
+- `navigate(route)` - Navigate to a new route
+- `goBack()` - Navigate to previous route in history
+- Route history maintained as a stack
+
+**Global Keyboard Shortcuts:**
+
+- **Escape** - Navigate to menu (from anywhere)
+- **Ctrl+O** - Logout (from anywhere)
+- **Ctrl+C** (double-tap within 3s) - Exit application
+
+## Authentication Flow
+
+1. **Check Existing Token** (src/stores/auth-store.tsx:34)
+   - On startup, check for stored token
+   - Validate token is still valid
+
+2. **Device Code Flow** (if not authenticated)
+   - Request device code from server
+   - Display code + URL to user
+   - Open browser automatically
+   - Poll server for token
+
+3. **Token Storage** (src/auth/token-storage.ts)
+   - Store encrypted token in user's config directory
+   - Platform-specific paths (XDG_CONFIG_HOME, AppData, etc.)
+
+4. **Token Usage**
+   - Included in WebSocket connection params
+   - Sent in Authorization header for HTTP requests
+
+## Message Rendering System
+
+Messages are rendered differently based on their type and attributes:
+
+**Message Types:**
+
+- `user` - Normal user messages
+- `cc` - Agent event messages (Claude Computer use protocol)
+- Custom types for specific agents
+
+**Message Renderers** (src/agent/core/message-renderers.tsx):
+
+- Routes messages to appropriate renderer based on type and attributes
+- Supports nested rendering for complex agent interactions
+- Handles markdown, code blocks, and special formatting
+
+**Message Mutations** (src/agent/core/message-mutations.ts):
+
+- Condense/merge streaming agent events
+- Prevent UI spam from rapid updates
+- Group related messages together
+
+## Configuration
+
+Configuration sources (in order of precedence):
+
+1. **Environment Variables**
+   - `GROUPCHAT_CONSOLE_URL` - Web console URL
+   - `GROUPCHAT_WS_URL` - WebSocket server URL
+   - `GROUPCHAT_PROFILE` - Profile name for multi-user testing
+   - `GROUPCHAT_DEBUG` - Enable debug logging
+
+2. **.env File** (loaded in development)
+
+3. **Default Values** (src/lib/config.ts:15)
+   - Console: `https://app.groupchatty.com`
+   - WebSocket: `wss://api.groupchatty.com/socket`
+
+## Error Handling
+
+- **Connection Errors** - Automatic reconnection with backoff
+- **Authentication Errors** - Redirect to login screen
+- **Message Send Failures** - Error displayed via status message
+- **Agent Errors** - Displayed inline in agent message stream
+
+## Performance Optimizations
+
+1. **Message Buffering**
+   - Non-active channels buffer up to 100 messages
+   - Prevents memory leaks from unbounded growth
+
+2. **Reactive Granularity**
+   - Fine-grained SolidJS reactivity only updates affected components
+   - Minimal re-renders compared to virtual DOM frameworks
+
+3. **Lazy Loading**
+   - Message history fetched on-demand when entering channel
+   - Presence/typing state only tracked for active channel
+
+4. **Debounced Operations**
+   - Typing indicators debounced to reduce network traffic
+   - Search input debounced for user search
+
+## Update Mechanism
+
+Automatic updates handled via src/lib/update-checker.ts:
+
+1. Check npm registry for latest version on startup
+2. Compare with current version
+3. If update available, silently download in background
+4. Update takes effect on next launch
+5. Non-blocking - doesn't interrupt current session

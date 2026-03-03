@@ -1,0 +1,86 @@
+---
+title: 'Testing'
+description: 'Run tests and verify your changes'
+---
+
+## Running Tests
+
+Groupchat uses Bun's built-in test runner with SolidJS preloading.
+
+### Basic Test Command
+
+```bash
+bun test
+```
+
+This runs: `bun test test --preload @opentui/solid/preload`
+
+## Test Modes
+
+<CodeGroup>
+
+```bash Run Once
+bun test
+```
+
+```bash Watch Mode
+bun run test:watch
+```
+
+```bash Update Snapshots
+bun run test:update-snapshots
+```
+
+</CodeGroup>
+
+### Watch Mode
+
+Automatically re-run tests when files change:
+
+```bash
+bun run test:watch
+```
+
+This is useful during development to get immediate feedback on your changes.
+
+### Snapshot Testing
+
+If you need to update test snapshots after intentional changes:
+
+```bash
+bun run test:update-snapshots
+```
+
+<Warning>
+Only update snapshots when you've intentionally changed the expected output. Review snapshot diffs carefully before updating.
+</Warning>
+
+## Type Checking
+
+Run TypeScript type checking without emitting files:
+
+```bash
+bun run typecheck
+```
+
+This runs: `tsc --noEmit`
+
+<Note>
+Type checking is automatically run before publishing as part of the `prepublishOnly` script.
+</Note>
+
+## Test Configuration
+
+Tests are located in the `test/` directory and use the `@opentui/solid/preload` module for proper SolidJS testing setup.
+
+## Pre-Publish Validation
+
+Before publishing to npm, both type checking and building are automatically run:
+
+```bash
+bun run prepublishOnly
+```
+
+This ensures:
+1. TypeScript types are valid (`bun run typecheck`)
+2. Production build succeeds (`bun run build`)

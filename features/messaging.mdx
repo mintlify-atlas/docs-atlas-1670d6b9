@@ -1,0 +1,432 @@
+---
+title: Real-time Messaging
+description: Send and receive messages with typing indicators, presence tracking, and message formatting
+---
+
+## Overview
+
+Groupchat CLI provides real-time bidirectional messaging over WebSocket connections using Phoenix Channels. Messages are delivered instantly to all connected users in a channel, with support for typing indicators, presence tracking, and rich message attributes.
+
+## Message Format
+
+Messages follow a structured format with metadata extracted from UUIDv7 identifiers:
+
+```typescript
+interface Message {
+  id: string;              // UUIDv7 with embedded timestamp
+  username: string;        // Sender username
+  content: string;         // Message text content
+  timestamp: string;       // ISO 8601 timestamp (extracted from UUID)
+  type?: string;           // Message type: "user", "cc", "system", etc.
+  attributes?: MessageAttributes;  // Optional metadata
+}
+```
+
+### Timestamp Extraction
+
+Timestamps are automatically extracted from UUIDv7 message IDs. The first 48 bits encode Unix milliseconds:
+
+```typescript
+// From channel-manager.ts:43
+function extractTimestampFromUUIDv7(uuid: string): string {
+  const hex = uuid.replace(/-/g, "").slice(0, 12);
+  const ms = parseInt(hex, 16);
+  return new Date(ms).toISOString();
+}
+```
+
+## Sending Messages
+
+### Channel Messages
+
+Send messages to a channel using the `ChannelManager`:
+
+```typescript
+// From channel-manager.ts:591
+async sendMessage(
+  channelSlug: string,
+  content: string
+): Promise<{ message_id: string }> {
+  const channelState = this.channelStates.get(channelSlug);
+  if (!channelState) {
+    throw new Error(`Not subscribed to channel: ${channelSlug}`);
+  }
+
+  return new Promise((resolve, reject) => {
+    channelState.channel
+      .push("new_message", { content })
+      .receive("ok", (resp) => resolve(resp))
+      .receive("error", (err) => reject(err))
+      .receive("timeout", () => reject(new Error("timeout")));
+  });
+}
+```
+
+<Tabs>
+  <Tab title="JavaScript">
+    ```javascript
+    // Send a message to #general
+    const result = await channelManager.sendMessage(
+      "public_room:general",
+      "Hello, world!"
+    );
+    console.log("Message ID:", result.message_id);
+    ```
+  </Tab>
+  
+  <Tab title="React/Solid">
+    ```tsx
+    // In ChatView component
+    const handleSendMessage = async (message: string) => {
+      await chat.sendMessage(message);
+    };
+    ```
+  </Tab>
+</Tabs>
+
+### Direct Messages
+
+Send DMs through the user channel:
+
+```typescript
+// From channel-manager.ts:912
+async sendDmMessage(
+  dmSlug: string,
+  content: string,
+  attributes?: MessageAttributes,
+  type?: "cc"
+): Promise<{ message_id: string }> {
+  if (!this.userChannel) {
+    throw new Error("User channel not connected");
+  }
+
+  const payload = {
+    dm_slug: dmSlug,
+    content,
+    attributes,
+    type
+  };
+
+  return new Promise((resolve, reject) => {
+    this.userChannel!.push("dm:send", payload)
+      .receive("ok", (resp) => resolve(resp))
+      .receive("error", (err) => reject(err));
+  });
+}
+```
+
+## Receiving Messages
+
+### Active vs Buffered Channels
+
+The ChannelManager uses smart routing to optimize memory and performance:
+
+```typescript
+// From channel-manager.ts:336
+channel.on("new_message", (payload) => {
+  const message = {
+    ...payload,
+    timestamp: extractTimestampFromUUIDv7(payload.id),
+    type: payload.type || "user"
+  };
+  
+  const isActiveChannel = channelSlug === this.currentActiveChannel;
+  
+  if (isActiveChannel) {
+    // Active channel - notify callback immediately
+    this.callbacks.onMessage?.(channelSlug, message);
+  } else {
+    // Non-active channel - buffer message
+    const state = this.channelStates.get(channelSlug);
+    if (state) {
+      state.realtimeMessages.push(message);
+      
+      // Limit buffer to prevent memory issues
+      if (state.realtimeMessages.length > 100) {
+        state.realtimeMessages.shift();
+      }
+    }
+    
+    // Still notify for unread count tracking
+    this.callbacks.onNonActiveChannelMessage?.(channelSlug, message);
+  }
+});
+```
+
+<Info>
+Buffered messages are stored in memory (max 100 per channel) and merged with history when you switch to that channel.
+</Info>
+
+## Typing Indicators
+
+Typing indicators show when users are composing messages.
+
+### Sending Typing Events
+
+```typescript
+// From channel-manager.ts:715
+startTyping(channelSlug: string): void {
+  const channelState = this.channelStates.get(channelSlug);
+  if (!channelState) return;
+  
+  channelState.channel.push("typing:start", {});
+}
+
+stopTyping(channelSlug: string): void {
+  const channelState = this.channelStates.get(channelSlug);
+  if (!channelState) return;
+  
+  channelState.channel.push("typing:stop", {});
+}
+```
+
+### Receiving Typing Events
+
+```typescript
+// From channel-manager.ts:405
+channel.on("user_typing_start", (payload) => {
+  const { username } = payload;
+  const channelState = this.channelStates.get(channelSlug);
+  if (channelState) {
+    channelState.typingUsers.add(username);
+  }
+  
+  if (channelSlug === this.currentActiveChannel) {
+    this.callbacks.onUserTyping?.(channelSlug, username, true);
+  }
+});
+```
+
+<Tabs>
+  <Tab title="Usage">
+    ```typescript
+    // Get typing users for display
+    const typingUsers = channelManager.getTypingUsers("public_room:general");
+    // ["alice", "bob"]
+    ```
+  </Tab>
+  
+  <Tab title="UI Example">
+    ```tsx
+    // From ChatView.tsx:172
+    <MessageList
+      messages={messages}
+      typingUsers={chat.typingUsers()}
+      currentUsername={chat.username()}
+    />
+    ```
+  </Tab>
+</Tabs>
+
+<Note>
+Typing indicators are sent as best-effort events. Errors are silently ignored to avoid disrupting the chat experience.
+</Note>
+
+## Presence Tracking
+
+Presence shows which users are currently online in a channel.
+
+### Presence State Structure
+
+```typescript
+type PresenceState = {
+  [username: string]: {
+    metas: Array<{
+      phx_ref: string;
+      online_at: string;
+      current_agent?: string;
+    }>;
+  };
+};
+```
+
+### Handling Presence Updates
+
+```typescript
+// From channel-manager.ts:377
+channel.on("presence_state", (payload) => {
+  const state = payload as PresenceState;
+  const channelState = this.channelStates.get(channelSlug);
+  if (channelState) {
+    channelState.presence = state;
+  }
+  
+  if (channelSlug === this.currentActiveChannel) {
+    this.callbacks.onPresenceState?.(channelSlug, state);
+  }
+});
+
+channel.on("presence_diff", (payload) => {
+  const diff = payload as PresenceDiff;
+  const channelState = this.channelStates.get(channelSlug);
+  
+  if (channelState) {
+    channelState.presence = applyPresenceDiff(channelState.presence, diff);
+  }
+});
+```
+
+### Applying Presence Diffs
+
+Presence updates are delivered as incremental diffs for efficiency:
+
+```typescript
+// From presence-utils.ts:43
+export function applyPresenceDiff(
+  prev: PresenceState,
+  diff: PresenceDiff
+): PresenceState {
+  const next: PresenceState = { ...prev };
+  
+  // Remove users who left
+  Object.entries(diff.leaves).forEach(([username, data]) => {
+    const existing = next[username]?.metas;
+    if (!existing) return;
+    
+    const remaining = removeMetas(existing, data.metas);
+    if (remaining.length === 0) {
+      delete next[username];
+    } else {
+      next[username] = { metas: remaining };
+    }
+  });
+  
+  // Add users who joined
+  Object.entries(diff.joins).forEach(([username, data]) => {
+    const existing = next[username]?.metas ?? [];
+    const merged = upsertMetas(existing, data.metas);
+    if (merged.length > 0) {
+      next[username] = { metas: merged };
+    }
+  });
+  
+  return next;
+}
+```
+
+## Message Attributes
+
+Messages can carry additional metadata through the `attributes` field:
+
+```typescript
+interface MessageAttributes {
+  cc?: CcEventMetadata;      // AI agent event metadata
+  claude?: ClaudeMessageMetadata;  // Claude-specific data
+  [key: string]: unknown;    // Custom attributes
+}
+```
+
+### Agent Event Messages
+
+```typescript
+// From channel-manager.ts:629
+async sendAgentEvent(
+  channelSlug: string,
+  content: string,
+  ccMeta: CcEventMetadata
+): Promise<void> {
+  const channelState = this.channelStates.get(channelSlug);
+  if (channelState) {
+    channelState.channel.push("new_message", {
+      content,
+      type: "cc",
+      attributes: { cc: ccMeta }
+    });
+  }
+}
+```
+
+<Warning>
+Agent event messages are fire-and-forget. Errors are logged but not propagated to prevent disrupting agent execution.
+</Warning>
+
+## Connection Status
+
+The ChannelManager tracks connection state:
+
+```typescript
+type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
+
+// From channel-manager.ts:813
+getConnectionStatus(): ConnectionStatus {
+  return this.connectionStatus;
+}
+
+isConnected(): boolean {
+  return this.connectionStatus === "connected" && !!this.socket;
+}
+```
+
+### Reconnection Logic
+
+Phoenix Channels automatically reconnect with exponential backoff:
+
+```typescript
+// From channel-manager.ts:90
+this.socket = new Socket(this.wsUrl, {
+  params: { token: this.token },
+  reconnectAfterMs: (tries: number) => {
+    return [1000, 2000, 5000, 10000][tries - 1] || 10000;
+  }
+});
+```
+
+## Message History
+
+Fetch historical messages via HTTP API:
+
+```typescript
+// From channel-manager.ts:516
+async fetchHistory(channelSlug: string, limit: number = 50): Promise<Message[]> {
+  const backendUrl = this.wsUrl
+    .replace(/^wss:/, "https:")
+    .replace(/^ws:/, "http:")
+    .replace(/\/socket$/, "");
+  
+  const encodedSlug = encodeURIComponent(channelSlug);
+  const url = `${backendUrl}/api/messages/${encodedSlug}?limit=${limit}`;
+  
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${this.token}` }
+  });
+  
+  const data = await response.json();
+  return data.messages || [];
+}
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Memory Management">
+    - Buffered messages are limited to 100 per channel
+    - Clear buffers after merging with history
+    - Use `clearRealtimeMessages()` when appropriate
+  </Accordion>
+  
+  <Accordion title="Error Handling">
+    - Always handle timeout/error callbacks on push events
+    - Check connection status before sending
+    - Typing indicators can safely ignore errors
+  </Accordion>
+  
+  <Accordion title="Performance">
+    - Only active channel receives immediate callbacks
+    - Inactive channels buffer messages for batch processing
+    - Presence diffs are more efficient than full state updates
+  </Accordion>
+</AccordionGroup>
+
+## Related Documentation
+
+<CardGroup cols={2}>
+  <Card title="Channels" icon="hashtag" href="/features/channels">
+    Learn about channel subscriptions and navigation
+  </Card>
+  <Card title="Direct Messages" icon="comment" href="/features/direct-messages">
+    One-on-one messaging features
+  </Card>
+  <Card title="AI Agents" icon="robot" href="/features/ai-agents">
+    Embedded agent integration
+  </Card>
+</CardGroup>

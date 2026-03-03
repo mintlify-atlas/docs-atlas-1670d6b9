@@ -1,0 +1,389 @@
+---
+title: Channel Management Commands
+description: Invite and remove users from channels using /invite and /remove commands
+---
+
+## Overview
+
+Channel management commands allow administrators to control channel membership. These commands require admin permissions and only work in channel contexts.
+
+## /invite Command
+
+Invite a user to join the current channel.
+
+### Syntax
+
+```bash
+/invite username
+```
+
+### Parameters
+
+<ParamField path="user" type="username" required>
+  Username of the person to invite
+  
+  **Type:** `username`
+  
+  **Source:** `search` (async search results)
+  
+  **Prefix:** `` (empty string - no @ symbol required)
+  
+  **Validation:**
+  - Must match a valid username from search results
+  - Case-insensitive matching
+  - Provides autocomplete suggestions as you type
+</ParamField>
+
+Source: `src/lib/commands.ts:291-301`
+
+### Restrictions
+
+<ParamField path="privateOnly" type="boolean" default="true">
+  Only works in private/admin contexts
+</ParamField>
+
+<ParamField path="adminOnly" type="boolean" default="true">
+  Requires admin permissions
+</ParamField>
+
+<ParamField path="channelOnly" type="boolean" default="true">
+  Only available in channels, not DMs
+</ParamField>
+
+Source: `src/lib/commands.ts:294-296`
+
+### Event Type
+
+Triggers event: `invite_user`
+
+### Payload
+
+The command extracts the following data:
+
+```typescript
+{
+  username: string,  // Matched username
+  user_id: number    // User's ID from search results
+}
+```
+
+Source: `src/lib/command-parser.ts:204-226`
+
+### Example Usage
+
+<CodeGroup>
+```bash Basic
+/invite alice
+```
+
+```bash With Autocomplete
+# Type: /invite al
+# Shows: alice, alex, allan (filtered suggestions)
+# Select or continue typing
+/invite alice
+```
+
+```bash Search-Based
+# System performs async search as you type
+/invite john
+# Validates against search results
+# Returns user_id: 42, username: "john"
+```
+</CodeGroup>
+
+### Validation Rules
+
+The `/invite` command uses search-based username validation:
+
+<Steps>
+  <Step title="Prefix Check">
+    No prefix required (empty string)
+    
+    Source: `src/lib/commands.ts:298`
+  </Step>
+  
+  <Step title="Async Search">
+    Validates against `asyncSearchResults` from context
+    
+    Source: `src/lib/commands.ts:92-122`
+  </Step>
+  
+  <Step title="Case-Insensitive Match">
+    Matches username case-insensitively
+    
+    ```typescript
+    const matching = results.filter(r =>
+      r.username.toLowerCase().startsWith(username.toLowerCase())
+    );
+    ```
+    
+    Source: `src/lib/commands.ts:111-113`
+  </Step>
+  
+  <Step title="Exact Match Required">
+    Must find exact match in search results
+    
+    ```typescript
+    const exactMatch = results.find(
+      r => r.username.toLowerCase() === username.toLowerCase()
+    );
+    ```
+    
+    Source: `src/lib/commands.ts:114-116`
+  </Step>
+</Steps>
+
+### Error Messages
+
+| Error | Condition |
+|-------|----------|
+| "Username required" | Empty input after `/invite ` |
+| "User not found" | No search results or no exact match |
+| "user is required" | Command submitted without parameter |
+
+Source: `src/lib/commands.ts:106-120` and `src/lib/command-parser.ts:108-109`
+
+## /remove Command
+
+Remove a user from the current channel.
+
+### Syntax
+
+```bash
+/remove username
+```
+
+### Parameters
+
+<ParamField path="user" type="username" required>
+  Username of the channel member to remove
+  
+  **Type:** `username`
+  
+  **Source:** `subscribed_without_self` (current channel members excluding you)
+  
+  **Prefix:** `` (empty string - no @ symbol required)
+  
+  **Validation:**
+  - Must match a current channel member
+  - Cannot remove yourself
+  - Case-insensitive matching
+  - Provides autocomplete of channel members
+</ParamField>
+
+Source: `src/lib/commands.ts:303-313`
+
+### Restrictions
+
+<ParamField path="privateOnly" type="boolean" default="true">
+  Only works in private/admin contexts
+</ParamField>
+
+<ParamField path="adminOnly" type="boolean" default="true">
+  Requires admin permissions
+</ParamField>
+
+<ParamField path="channelOnly" type="boolean" default="true">
+  Only available in channels, not DMs
+</ParamField>
+
+Source: `src/lib/commands.ts:306-308`
+
+### Event Type
+
+Triggers event: `remove_user`
+
+### Payload
+
+The command extracts the following data:
+
+```typescript
+{
+  username: string,  // Matched username
+  user_id: number    // User's ID from subscribed users
+}
+```
+
+Source: `src/lib/command-parser.ts:204-226`
+
+### Example Usage
+
+<CodeGroup>
+```bash Basic
+/remove bob
+```
+
+```bash With Autocomplete
+# In a channel with members: alice, bob, charlie, you
+# Type: /remove b
+# Shows: bob (charlie and alice filtered out)
+# Note: your username is excluded from suggestions
+/remove bob
+```
+
+```bash Complete Session
+# Check channel members first
+# Type: /remove
+# Shows all members except yourself
+# Select member to remove
+/remove charlie
+```
+</CodeGroup>
+
+### Validation Rules
+
+The `/remove` command validates against subscribed users:
+
+<Steps>
+  <Step title="Prefix Check">
+    No prefix required (empty string)
+    
+    Source: `src/lib/commands.ts:310`
+  </Step>
+  
+  <Step title="Filter User List">
+    Uses `subscribed_without_self` source:
+    
+    ```typescript
+    case "subscribed_without_self":
+      return ctx.subscribedUsers.filter(u => 
+        u.username !== ctx.currentUsername
+      );
+    ```
+    
+    Source: `src/lib/commands.ts:128-129`
+  </Step>
+  
+  <Step title="Case-Insensitive Match">
+    Matches username case-insensitively against filtered list
+    
+    Source: `src/lib/commands.ts:158-164`
+  </Step>
+  
+  <Step title="Exact Match Required">
+    Must find exact match in subscribed users
+    
+    Source: `src/lib/commands.ts:162-164`
+  </Step>
+</Steps>
+
+### Error Messages
+
+| Error | Condition |
+|-------|----------|
+| "Username required" | Empty input after `/remove ` |
+| "User not found" | Username not in channel members |
+| "user is required" | Command submitted without parameter |
+
+Source: `src/lib/commands.ts:153-169` and `src/lib/command-parser.ts:108-109`
+
+## Username Parameter Type
+
+Both commands use the `username` parameter type with different sources:
+
+### Source Types
+
+<ParamField path="source" type="enum">
+  Determines which user list to validate against:
+  
+  - **`all`** - All present users in the application
+  - **`subscribed_without_self`** - Channel members excluding current user (used by `/remove`)
+  - **`not_subscribed`** - Users not in the current channel
+  - **`search`** - Async search results (used by `/invite`)
+</ParamField>
+
+Source: `src/lib/commands.ts:17` and `src/lib/commands.ts:126-138`
+
+### Validation Flow
+
+Username validation follows this process:
+
+```typescript
+// 1. Check prefix requirement
+if (p.prefix && !rawValue.startsWith(p.prefix)) {
+  return { isValid: false, error: `Must start with ${p.prefix}` };
+}
+
+// 2. Normalize value (remove prefix)
+const username = normalizeUsernameValue(rawValue, p.prefix);
+
+// 3. Get filtered user list based on source
+const users = getUserList(); // Depends on source type
+
+// 4. Find matching users for autocomplete
+const matchingUsers = users.filter(u =>
+  u.username.toLowerCase().startsWith(username.toLowerCase())
+);
+
+// 5. Check exact match for validation
+const exactMatch = users.find(
+  u => u.username.toLowerCase() === username.toLowerCase()
+);
+
+return {
+  isValid: !!exactMatch,
+  error: exactMatch ? undefined : "User not found",
+  suggestions: matchingUsers.map(u => formatUsernameSuggestion(u.username, p.prefix))
+};
+```
+
+Source: `src/lib/commands.ts:87-170`
+
+## Autocomplete Behavior
+
+### Dynamic Filtering
+
+As you type, autocomplete filters suggestions:
+
+```typescript
+// For /invite (search source)
+const matching = asyncSearchResults.filter(r =>
+  r.username.toLowerCase().startsWith(input.toLowerCase())
+);
+
+// For /remove (subscribed_without_self source)
+const subscribedWithoutSelf = subscribedUsers
+  .filter(u => u.username !== currentUsername)
+  .filter(u => u.username.toLowerCase().startsWith(input.toLowerCase()));
+```
+
+Source: `src/lib/commands.ts:111-113` and `src/lib/commands.ts:158-160`
+
+### Suggestion Format
+
+Suggestions include the username prefix:
+
+```typescript
+const formatUsernameSuggestion = (username: string, prefix: string) =>
+  prefix ? `${prefix}${username}` : username;
+```
+
+Since both commands use empty prefix, suggestions are just usernames.
+
+Source: `src/lib/commands.ts:76-77`
+
+## Permission Requirements
+
+Both commands have strict access controls:
+
+| Requirement | Value | Effect |
+|-------------|-------|--------|
+| `privateOnly` | `true` | Only works in private/admin contexts |
+| `adminOnly` | `true` | Requires admin role |
+| `channelOnly` | `true` | Not available in DMs |
+
+Users must have admin permissions and be in a channel context to use these commands.
+
+Source: `src/lib/commands.ts:294-296` and `src/lib/commands.ts:306-308`
+
+## Related Commands
+
+<CardGroup cols={2}>
+  <Card title="Commands Overview" icon="list" href="/commands/overview">
+    Learn about the command system and parameter types
+  </Card>
+  
+  <Card title="Invite Links" icon="link" href="/commands/invites">
+    Generate shareable invite links for channels
+  </Card>
+</CardGroup>

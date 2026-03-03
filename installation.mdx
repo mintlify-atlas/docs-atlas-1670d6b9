@@ -1,0 +1,142 @@
+---
+title: Installation
+description: Install Groupchat CLI on macOS, Linux, or Windows using your preferred package manager.
+---
+
+## System Requirements
+
+Before installing Groupchat, ensure your system meets these requirements:
+
+- **Node.js** 18.0 or higher (for npm, yarn, or pnpm)
+- **Bun** 1.0.0 or higher (if using bun)
+- An interactive terminal (TTY support required)
+
+## Supported Platforms
+
+Groupchat provides native binaries for the following platforms:
+
+- `darwin-arm64` - macOS Apple Silicon (M1, M2, M3, etc.)
+- `darwin-x64` - macOS Intel
+- `linux-arm64` - Linux ARM64
+- `linux-x64` - Linux x64
+- `win32-x64` - Windows x64
+
+## Installation
+
+<Steps>
+  <Step title="Choose your package manager">
+    Select your preferred package manager and run the installation command:
+
+    <CodeGroup>
+      ```bash npm
+      npm install -g groupchat
+      ```
+
+      ```bash yarn
+      yarn global add groupchat
+      ```
+
+      ```bash pnpm
+      pnpm add -g groupchat
+      ```
+
+      ```bash bun
+      bun add -g groupchat
+      ```
+    </CodeGroup>
+
+    <Note>
+      The `-g` or `global` flag installs Groupchat globally, making the `groupchat` command available system-wide.
+    </Note>
+  </Step>
+
+  <Step title="Verify installation">
+    After installation, verify that Groupchat is available:
+
+    ```bash
+    groupchat --version
+    ```
+
+    This should display the current version (e.g., `0.1.7`).
+  </Step>
+
+  <Step title="Launch Groupchat">
+    Start Groupchat by running:
+
+    ```bash
+    groupchat
+    ```
+
+    On first launch, you'll be prompted to authenticate via your browser.
+  </Step>
+</Steps>
+
+## Platform-Specific Notes
+
+### macOS
+
+Groupchat automatically selects the correct binary for your Mac:
+- Apple Silicon (M1/M2/M3) uses `@groupchat-cli/darwin-arm64`
+- Intel Macs use `@groupchat-cli/darwin-x64`
+
+### Linux
+
+Ensure you have a compatible terminal emulator that supports:
+- TTY/interactive mode
+- ANSI escape sequences
+- UTF-8 encoding
+
+### Windows
+
+Groupchat works best with modern terminals like:
+- Windows Terminal
+- PowerShell 7+
+- Git Bash
+
+<Tip>
+  For the best experience on Windows, use Windows Terminal with a monospace font like "JetBrains Mono" or "Fira Code".
+</Tip>
+
+## Troubleshooting
+
+### "groupchat requires an interactive terminal"
+
+This error occurs when Groupchat is run in a non-interactive environment. Ensure you're running it in a proper terminal session, not through:
+- CI/CD pipelines
+- Non-TTY shells
+- Redirected output
+
+### Platform binary not found
+
+If you see errors about missing platform binaries, your system architecture may not be supported. Check the [supported platforms](#supported-platforms) list above.
+
+### Permission errors on global install
+
+If you encounter permission errors during global installation:
+
+<CodeGroup>
+  ```bash npm
+  sudo npm install -g groupchat
+  ```
+
+  ```bash yarn
+  sudo yarn global add groupchat
+  ```
+
+  ```bash pnpm
+  sudo pnpm add -g groupchat
+  ```
+</CodeGroup>
+
+Alternatively, configure your package manager to install global packages in your user directory.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Complete the quickstart tutorial to send your first message
+  </Card>
+  <Card title="Commands" icon="terminal" href="/commands/overview">
+    Learn keyboard shortcuts and slash commands
+  </Card>
+</CardGroup>

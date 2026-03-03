@@ -1,0 +1,112 @@
+---
+title: Environment Variables
+description: Configure Groupchat CLI using environment variables
+---
+
+Groupchat CLI can be configured using environment variables to customize its behavior and connection settings.
+
+## Connection Settings
+
+### GROUPCHAT_CONSOLE_URL
+
+The URL of the Groupchat web console.
+
+**Default:** `https://app.groupchatty.com`
+
+```bash
+export GROUPCHAT_CONSOLE_URL="https://app.groupchatty.com"
+```
+
+### GROUPCHAT_WS_URL
+
+The WebSocket URL for real-time communication.
+
+**Default:** `wss://api.groupchatty.com/socket`
+
+```bash
+export GROUPCHAT_WS_URL="wss://api.groupchatty.com/socket"
+```
+
+## Debugging
+
+### GROUPCHAT_DEBUG
+
+Enable debug logging to help troubleshoot issues.
+
+**Default:** Not set (disabled)
+
+**Accepted values:** `1`, `true`, `yes`, `on` (case-insensitive)
+
+```bash
+export GROUPCHAT_DEBUG=1
+groupchat
+```
+
+When enabled, debug logs are written to `.logs/tui-debug.log` in the current working directory.
+
+### GROUPCHAT_DEBUG_STDERR
+
+Write debug logs to stderr in addition to the log file.
+
+**Default:** Not set (disabled)
+
+**Accepted values:** `1`, `true`, `yes`, `on` (case-insensitive)
+
+```bash
+export GROUPCHAT_DEBUG=1
+export GROUPCHAT_DEBUG_STDERR=1
+groupchat
+```
+
+### GROUPCHAT_DEBUG_FILE
+
+Customize the debug log file location.
+
+**Default:** `.logs/tui-debug.log`
+
+```bash
+export GROUPCHAT_DEBUG=1
+export GROUPCHAT_DEBUG_FILE="/tmp/groupchat-debug.log"
+groupchat
+```
+
+### SHOW_CONSOLE
+
+Enable console output for OpenTUI debugging. This is primarily used during development.
+
+**Default:** Not set (disabled)
+
+**Accepted values:** `true`
+
+```bash
+export GROUPCHAT_DEBUG=1
+export SHOW_CONSOLE=true
+groupchat
+```
+
+## Configuration File
+
+You can also use a `.env` file in your current working directory during development (non-production environments):
+
+```bash
+# .env
+GROUPCHAT_CONSOLE_URL=https://app.groupchatty.com
+GROUPCHAT_WS_URL=wss://api.groupchatty.com/socket
+GROUPCHAT_DEBUG=1
+GROUPCHAT_DEBUG_FILE=.logs/tui-debug.log
+```
+
+<Note>
+  The `.env` file is only loaded when `NODE_ENV` is not set to `production`. Environment variables always take precedence over `.env` file values.
+</Note>
+
+## Complete Example
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `GROUPCHAT_CONSOLE_URL` | `https://app.groupchatty.com` | Web console URL |
+| `GROUPCHAT_WS_URL` | `wss://api.groupchatty.com/socket` | WebSocket URL |
+| `GROUPCHAT_DEBUG` | Not set | Enable debug logging |
+| `GROUPCHAT_DEBUG_STDERR` | Not set | Write debug logs to stderr |
+| `GROUPCHAT_DEBUG_FILE` | `.logs/tui-debug.log` | Debug log file path |
+| `SHOW_CONSOLE` | Not set | Enable OpenTUI console output |

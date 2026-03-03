@@ -1,0 +1,571 @@
+---
+title: Direct Messages
+description: One-on-one DM conversations, inbox view, and message management
+---
+
+## Overview
+
+Direct Messages (DMs) provide private one-on-one conversations between users. Unlike channels, DMs are routed through a dedicated user channel and use a conversation-based model with automatic thread management.
+
+## DM Architecture
+
+### User Channel
+
+All DMs are routed through a single user-specific channel:
+
+```typescript
+// From channel-manager.ts:154
+async joinUserChannel(userId: number): Promise<void> {
+  if (!this.socket) {
+    throw new Error("Socket not connected. Call connect() first.");
+  }
+  
+  this.userId = userId;
+  
+  return new Promise((resolve, reject) => {
+    this.userChannel = this.socket!.channel(`user:${userId}`, {});
+    
+    // Setup DM event handlers
+    this.setupUserChannelHandlers();
+    
+    this.userChannel.join()
+      .receive("ok", () => resolve())
+      .receive("error", (error) => reject(error));
+  });
+}
+```
+
+<Info>
+The user channel must be joined after connecting the socket and before sending or receiving DMs.
+</Info>
+
+### DM Slug Format
+
+DM conversations use slugs in the format `dm:{user1_id}:{user2_id}`:
+
+```typescript
+interface DmConversation {
+  slug: string;                    // e.g., "dm:123:456"
+  other_user_id: number;
+  other_username: string;
+  last_message_preview: string;    // Truncated to 100 chars
+  last_activity_at: string;        // ISO 8601 timestamp
+  unread_count: number;
+}
+```
+
+## Creating DM Conversations
+
+### Create or Get Existing
+
+```typescript
+// From chat-client.ts:249
+export async function createOrGetDm(
+  wsUrl: string,
+  token: string,
+  otherUser: { user_id: number } | { username: string }
+): Promise<CreateDmResponse> {
+  const backendUrl = wsUrl
+    .replace(/^wss:/, "https:")
+    .replace(/^ws:/, "http:")
+    .replace(/\/socket$/, "");
+  
+  const url = `${backendUrl}/api/dm`;
+  
+  const body = "user_id" in otherUser
+    ? { other_user_id: otherUser.user_id }
+    : { other_username: otherUser.username };
+  
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(body)
+  });
+  
+  if (!response.ok) {
+    const data = await response.json();
+    throw new Error(data.error || `Failed to create DM: ${response.status}`);
+  }
+  
+  return response.json();
+}
+```
+
+<Tabs>
+  <Tab title="By User ID">
+    ```typescript
+    const dm = await createOrGetDm(wsUrl, token, { user_id: 123 });
+    console.log("DM slug:", dm.conversation.slug);
+    ```
+  </Tab>
+  
+  <Tab title="By Username">
+    ```typescript
+    const dm = await createOrGetDm(wsUrl, token, { username: "alice" });
+    console.log("Conversation with:", dm.conversation.other_username);
+    ```
+  </Tab>
+</Tabs>
+
+<Note>
+This endpoint is idempotent - calling it multiple times returns the same conversation.
+</Note>
+
+## Fetching DM Conversations
+
+Retrieve all active DM conversations:
+
+```typescript
+// From chat-client.ts:221
+export async function fetchDmConversations(
+  wsUrl: string,
+  token: string
+): Promise<DmConversationsResponse> {
+  const backendUrl = wsUrl
+    .replace(/^wss:/, "https:")
+    .replace(/^ws:/, "http:")
+    .replace(/\/socket$/, "");
+  
+  const url = `${backendUrl}/api/dm`;
+  
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  
+  if (!response.ok) {
+    throw new Error(`Failed to fetch DM conversations: ${response.status}`);
+  }
+  
+  return response.json();
+}
+```
+
+### Sorting Conversations
+
+Sort by most recent activity:
+
+```typescript
+// From dm-utils.ts:22
+export function sortConversationsByActivity(
+  conversations: DmConversation[]
+): DmConversation[] {
+  return [...conversations].sort((a, b) => {
+    return new Date(b.last_activity_at).getTime() - 
+           new Date(a.last_activity_at).getTime();
+  });
+}
+```
+
+<CodeGroup>
+  ```typescript Response
+  {
+    "conversations": [
+      {
+        "slug": "dm:123:456",
+        "other_user_id": 456,
+        "other_username": "alice",
+        "last_message_preview": "Hey, how are you?",
+        "last_activity_at": "2026-03-03T10:30:00Z",
+        "unread_count": 3
+      },
+      {
+        "slug": "dm:123:789",
+        "other_user_id": 789,
+        "other_username": "bob",
+        "last_message_preview": "Thanks for the update!",
+        "last_activity_at": "2026-03-02T15:45:00Z",
+        "unread_count": 0
+      }
+    ]
+  }
+  ```
+  
+  ```typescript Sorted
+  const sorted = sortConversationsByActivity(response.conversations);
+  // alice (newer) appears before bob (older)
+  ```
+</CodeGroup>
+
+## Fetching DM Messages
+
+Retrieve message history for a specific conversation:
+
+```typescript
+// From chat-client.ts:285
+export async function fetchDmMessages(
+  wsUrl: string,
+  token: string,
+  dmSlug: string,
+  limit: number = 50
+): Promise<{ messages: Message[]; dm_slug: string }> {
+  const backendUrl = wsUrl
+    .replace(/^wss:/, "https:")
+    .replace(/^ws:/, "http:")
+    .replace(/\/socket$/, "");
+  
+  const encodedSlug = encodeURIComponent(dmSlug);
+  const url = `${backendUrl}/api/dm/${encodedSlug}/messages?limit=${limit}`;
+  
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  
+  if (!response.ok) {
+    throw new Error(`Failed to fetch DM messages: ${response.status}`);
+  }
+  
+  return response.json();
+}
+```
+
+## Sending DM Messages
+
+### Send via User Channel
+
+```typescript
+// From channel-manager.ts:912
+async sendDmMessage(
+  dmSlug: string,
+  content: string,
+  attributes?: MessageAttributes,
+  type?: "cc"
+): Promise<{ message_id: string }> {
+  if (!this.userChannel) {
+    throw new Error("User channel not connected");
+  }
+  
+  if (!this.socket || this.connectionStatus !== "connected") {
+    throw new Error("Connection lost");
+  }
+  
+  const payload = {
+    dm_slug: dmSlug,
+    content,
+    attributes,
+    type
+  };
+  
+  return new Promise((resolve, reject) => {
+    this.userChannel!.push("dm:send", payload)
+      .receive("ok", (resp) => resolve(resp))
+      .receive("error", (err) => reject(err));
+  });
+}
+```
+
+<Tabs>
+  <Tab title="Basic Message">
+    ```typescript
+    const result = await channelManager.sendDmMessage(
+      "dm:123:456",
+      "Hello Alice!"
+    );
+    console.log("Message ID:", result.message_id);
+    ```
+  </Tab>
+  
+  <Tab title="With Metadata">
+    ```typescript
+    await channelManager.sendDmMessage(
+      "dm:123:456",
+      "Task completed",
+      { custom_field: "value" },
+      undefined
+    );
+    ```
+  </Tab>
+</Tabs>
+
+## Receiving DM Messages
+
+### Real-time Message Handler
+
+```typescript
+// From channel-manager.ts:227
+this.userChannel.on("dm:new_message", (payload) => {
+  const msg = payload as DmMessage;
+  debugLog("incoming-message", {
+    source: "dm:new_message",
+    dmSlug: msg.dm_slug,
+    messageId: msg.id,
+    username: msg.username
+  });
+  this.callbacks.onDmMessage?.(msg);
+});
+```
+
+### DM Message Structure
+
+```typescript
+interface DmMessage {
+  id: string;              // UUIDv7
+  dm_slug: string;         // Conversation identifier
+  username: string;        // Sender username
+  content: string;         // Message content
+  attributes?: MessageAttributes;
+}
+```
+
+### Timestamp Extraction
+
+DM messages use the same UUIDv7 timestamp extraction:
+
+```typescript
+// From DmChatView.tsx:31
+function extractTimestampFromUUIDv7(uuid: string): string {
+  const hex = uuid.replace(/-/g, "").slice(0, 12);
+  const ms = parseInt(hex, 16);
+  return new Date(ms).toISOString();
+}
+
+// Convert DmMessage to Message
+const message: Message = {
+  id: msg.id,
+  username: msg.username,
+  content: msg.content,
+  timestamp: extractTimestampFromUUIDv7(msg.id),
+  attributes: msg.attributes
+};
+```
+
+## Typing Indicators
+
+### Sending DM Typing Events
+
+```typescript
+// From channel-manager.ts:967
+startDmTyping(dmSlug: string): void {
+  if (!this.userChannel || this.connectionStatus !== "connected") return;
+  
+  try {
+    this.userChannel.push("dm:typing_start", { dm_slug: dmSlug });
+  } catch {
+    // Ignore typing indicator errors
+  }
+}
+
+stopDmTyping(dmSlug: string): void {
+  if (!this.userChannel || this.connectionStatus !== "connected") return;
+  
+  try {
+    this.userChannel.push("dm:typing_stop", { dm_slug: dmSlug });
+  } catch {
+    // Ignore typing indicator errors
+  }
+}
+```
+
+### Receiving DM Typing Events
+
+```typescript
+// From channel-manager.ts:240
+this.userChannel.on("dm:typing_start", (payload) => {
+  const { dm_slug, username } = payload;
+  this.callbacks.onDmTypingStart?.(dm_slug, username);
+});
+
+this.userChannel.on("dm:typing_stop", (payload) => {
+  const { dm_slug, username } = payload;
+  this.callbacks.onDmTypingStop?.(dm_slug, username);
+});
+```
+
+<Warning>
+Typing indicators are scoped to individual conversations. Events include the `dm_slug` to route them correctly.
+</Warning>
+
+## Message Preview
+
+Last message previews are truncated for inbox display:
+
+```typescript
+// From dm-utils.ts:14
+export function truncatePreview(content: string): string {
+  if (content.length > 100) {
+    return content.slice(0, 97) + "...";
+  }
+  return content;
+}
+```
+
+<Info>
+This matches the backend logic in `backend/lib/backend/chat.ex:873-879`.
+</Info>
+
+## Marking DMs as Read
+
+```typescript
+// From channel-manager.ts:993
+async markDmAsRead(dmSlug: string): Promise<void> {
+  if (!this.userChannel) return;
+  
+  return new Promise((resolve, reject) => {
+    this.userChannel!.push("dm:mark_read", { dm_slug: dmSlug })
+      .receive("ok", () => resolve())
+      .receive("error", (err) => reject(err));
+  });
+}
+```
+
+### Auto-marking on Entry
+
+From DmChatView:
+
+```typescript
+// From DmChatView.tsx:118
+createEffect(() => {
+  const manager = chat.channelManager();
+  const dm = conversation();
+  
+  if (!manager || !dm) return;
+  
+  manager.markDmAsRead(dm.slug).catch(() => {});
+  dms.clearUnreadCount(dm.slug);
+});
+
+onCleanup(() => {
+  const manager = chat.channelManager();
+  const dm = conversation();
+  if (manager && dm) {
+    manager.markDmAsRead(dm.slug).catch(() => {});
+  }
+});
+```
+
+## DM Chat View
+
+The DmChatView component handles DM UI:
+
+```typescript
+// From DmChatView.tsx:37
+export function DmChatView(props: DmChatViewProps) {
+  const dms = useDmStore();
+  const chat = useChatStore();
+  const [messages, setMessages] = createSignal<Message[]>([]);
+  const [typingUsers, setTypingUsers] = createSignal<string[]>([]);
+  
+  const conversation = () => dms.currentDm();
+  const title = () => conversation()?.other_username || "DM";
+  
+  // Navigate back to inbox if conversation cleared
+  createEffect(() => {
+    if (!conversation()) {
+      navigation.navigate("dm-inbox");
+    }
+  });
+  
+  // Fetch message history when conversation changes
+  createEffect(() => {
+    const dm = conversation();
+    const token = auth.token();
+    
+    if (!dm || !token) return;
+    
+    const fetchHistory = async () => {
+      const data = await fetchDmMessages(config.wsUrl, token, dm.slug);
+      setMessages(condenseAgentMessages(data.messages || [], chat.username()));
+    };
+    
+    void fetchHistory();
+  });
+  
+  // ... message handling setup
+}
+```
+
+### Real-time Message Updates
+
+```typescript
+// From DmChatView.tsx:135
+const managerWithCallbacks = manager as unknown as {
+  callbacks: {
+    onDmMessage?: (msg: DmMessage) => void;
+    onDmTypingStart?: (dmSlug: string, username: string) => void;
+    onDmTypingStop?: (dmSlug: string, username: string) => void;
+  }
+};
+
+managerWithCallbacks.callbacks.onDmMessage = (msg: DmMessage) => {
+  if (msg.dm_slug === dm.slug) {
+    const message: Message = {
+      id: msg.id,
+      username: msg.username,
+      content: msg.content,
+      timestamp: extractTimestampFromUUIDv7(msg.id),
+      attributes: msg.attributes
+    };
+    
+    setMessages((prev) => {
+      const next = upsertAgentMessage(prev, message, currentUsername);
+      return next;
+    });
+  }
+};
+```
+
+## Presence in DMs
+
+DMs use global presence to show online status:
+
+```typescript
+// From DmChatView.tsx:65
+const isOtherUserOnline = createMemo(() => {
+  const convo = conversation();
+  if (!convo) return false;
+  return Boolean(chat.globalPresence()[convo.other_username]);
+});
+
+// Display in UI
+<text fg={isOtherUserOnline() ? PRESENCE.online : PRESENCE.offline}>
+  ●
+</text>
+<text fg="cyan">
+  <strong>{title()}</strong>
+</text>
+```
+
+<Info>
+Global presence is tracked via the `public:status` channel and shared across all views.
+</Info>
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Connection Setup">
+    - Join user channel immediately after socket connection
+    - Ensure user channel is ready before sending DMs
+    - Handle user channel disconnection gracefully
+  </Accordion>
+  
+  <Accordion title="Conversation Management">
+    - Use `createOrGetDm()` for idempotent conversation creation
+    - Sort conversations by `last_activity_at` for inbox view
+    - Truncate previews to 100 characters consistently
+  </Accordion>
+  
+  <Accordion title="Message Handling">
+    - Filter incoming DMs by `dm_slug` in callbacks
+    - Extract timestamps from UUIDv7 message IDs
+    - Mark as read both on entry and cleanup
+  </Accordion>
+  
+  <Accordion title="Typing Indicators">
+    - Always include `dm_slug` in typing events
+    - Filter typing events by active conversation
+    - Silently ignore typing indicator errors
+  </Accordion>
+</AccordionGroup>
+
+## Related Documentation
+
+<CardGroup cols={2}>
+  <Card title="Messaging" icon="message" href="/features/messaging">
+    Core messaging features and protocols
+  </Card>
+  <Card title="Channels" icon="hashtag" href="/features/channels">
+    Channel-based conversations
+  </Card>
+</CardGroup>

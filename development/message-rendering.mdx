@@ -1,0 +1,415 @@
+---
+title: Message Rendering
+description: Customize message display with mutations, renderers, and depth resolvers
+---
+
+The message rendering system controls how messages are displayed in channels and DMs. It consists of two main components: message mutations (for preprocessing) and message renderers (for UI display).
+
+## Message Mutation System
+
+Message mutations normalize and condense incoming agent messages before they're displayed. This is useful for grouping related events, merging streaming updates, or transforming message formats.
+
+### Architecture
+
+The mutation system is defined in `src/agent/core/message-mutations.ts`:
+
+```typescript
+type AgentMessageMutator = (
+  messages: Message[],
+  incoming: Message,
+  myUsername: string | null
+) => Message[] | null
+```
+
+A mutator:
+
+- Receives the current message array
+- Receives an incoming message
+- Returns a new message array if it handles the message
+- Returns `null` if it doesn't handle the message
+
+### Core Functions
+
+Two main functions drive the mutation system:
+
+```typescript
+// Upsert a single message
+export function upsertAgentMessage(
+  messages: Message[],
+  incoming: Message,
+  myUsername: string | null
+): Message[]
+
+// Condense an entire message array
+export function condenseAgentMessages(
+  messages: Message[],
+  myUsername: string | null
+): Message[]
+```
+
+Both channel and DM ingestion paths use these functions, so mutators apply everywhere.
+
+### Adding a Mutator
+
+<Steps>
+
+### Create Mutator Module
+
+Create `src/agent/{agent}/message-mutations.ts`:
+
+```typescript
+import type { Message } from "../../lib/types"
+
+export const AGENT_ID = "youragent"
+
+// Detection function
+export function isYourAgentMessage(message: Message): boolean {
+  return message.attributes?.agentId === AGENT_ID
+}
+
+// Upsert/merge logic
+export function upsertYourAgentMessage(
+  messages: Message[],
+  incoming: Message,
+  myUsername: string | null
+): Message[] {
+  // Example: Group events by turnId
+  const turnId = incoming.attributes?.youragent?.turnId
+  if (!turnId) {
+    return [...messages, incoming]
+  }
+
+  // Find existing message with same turnId
+  const existingIndex = messages.findIndex(
+    m => m.attributes?.youragent?.turnId === turnId
+  )
+
+  if (existingIndex === -1) {
+    // New turn, append message
+    return [...messages, incoming]
+  }
+
+  // Update existing message
+  const updated = [...messages]
+  updated[existingIndex] = mergeMessages(updated[existingIndex], incoming)
+  return updated
+}
+
+function mergeMessages(existing: Message, incoming: Message): Message {
+  // Implement your merge logic
+  // For example, append content or update status
+  return {
+    ...existing,
+    content: existing.content + incoming.content,
+    attributes: {
+      ...existing.attributes,
+      ...incoming.attributes,
+    },
+  }
+}
+```
+
+### Register in Core
+
+Edit `src/agent/core/message-mutations.ts`:
+
+```typescript
+import {
+  isYourAgentMessage,
+  upsertYourAgentMessage,
+} from "../youragent/message-mutations"
+
+const upsertYourAgentMutator: AgentMessageMutator = (
+  messages,
+  incoming,
+  myUsername
+) => {
+  if (!isYourAgentMessage(incoming)) return null
+  return upsertYourAgentMessage(messages, incoming, myUsername)
+}
+
+const AGENT_MESSAGE_MUTATORS: AgentMessageMutator[] = [
+  // ... existing mutators
+  upsertYourAgentMutator,
+]
+```
+
+</Steps>
+
+### Example: Claude Event Mutator
+
+The Claude agent groups streaming events by turn and session:
+
+```typescript
+const upsertClaudeEventMutator: AgentMessageMutator = (
+  messages,
+  incoming,
+  myUsername
+) => {
+  if (!isClaudeEventMessage(incoming)) return null
+  return upsertClaudeEventMessage(messages, incoming, myUsername)
+}
+```
+
+This mutator:
+
+1. Detects Claude event messages
+2. Groups them by `turnId` and `sessionId`
+3. Merges related events into a single message
+4. Updates the message as new events arrive
+
+## Message Renderers
+
+Renderers map message records to agent-specific UI components. They're defined in `src/agent/core/message-renderers.tsx`.
+
+### Renderer Types
+
+Typical renderer additions:
+
+- **Response renderer** - Displays agent response messages
+- **Event stream renderer** - Displays streaming events (questions, tool calls, results)
+- **Status renderer** - Displays temporary status messages
+
+### Adding a Renderer
+
+Renderers are React components that receive a message and render custom UI:
+
+```typescript
+import type { Message } from "../../lib/types"
+
+interface YourAgentMessageProps {
+  message: Message
+  depth?: number
+  // ... other props
+}
+
+export function YourAgentMessage(props: YourAgentMessageProps) {
+  const eventType = props.message.attributes?.youragent?.eventType
+
+  if (eventType === "tool_call") {
+    return <ToolCallRenderer message={props.message} />
+  }
+
+  if (eventType === "result") {
+    return <ResultRenderer message={props.message} />
+  }
+
+  return <DefaultRenderer message={props.message} />
+}
+```
+
+### Registering Renderers
+
+Renderers are registered in the main renderer routing logic:
+
+```typescript
+// src/agent/core/message-renderers.tsx
+import { YourAgentMessage } from "../youragent/renderers"
+
+export function renderMessage(message: Message, depth: number) {
+  // Route to appropriate renderer based on message type/attributes
+  if (message.attributes?.agentId === "youragent") {
+    return <YourAgentMessage message={message} depth={depth} />
+  }
+
+  // ... other renderers
+}
+```
+
+## Depth Resolvers
+
+Depth resolvers handle nested sub-agent or task threads. They determine the indentation level for messages.
+
+### When to Use
+
+Use depth resolvers when your agent supports:
+
+- Nested task hierarchies
+- Sub-agent threads
+- Recursive operations
+
+### Implementation
+
+Depth resolvers inspect message attributes to determine nesting level:
+
+```typescript
+export function resolveMessageDepth(message: Message): number {
+  // Check for nested task structure
+  const taskDepth = message.attributes?.youragent?.taskDepth
+  if (typeof taskDepth === "number") {
+    return taskDepth
+  }
+
+  // Check for parent message references
+  const parentId = message.attributes?.youragent?.parentMessageId
+  if (parentId) {
+    // Calculate depth based on parent hierarchy
+    return calculateDepthFromParent(parentId)
+  }
+
+  // Default depth
+  return 0
+}
+```
+
+### Registration
+
+Register depth resolvers alongside renderers:
+
+```typescript
+export function renderMessage(message: Message) {
+  const depth = resolveMessageDepth(message)
+
+  if (message.attributes?.agentId === "youragent") {
+    return <YourAgentMessage message={message} depth={depth} />
+  }
+
+  // ... other renderers
+}
+```
+
+## Message Attributes
+
+Message attributes store agent-specific metadata. Use namespaced keys to avoid conflicts:
+
+```typescript
+export interface MessageAttributes {
+  // Namespaced under agent ID
+  youragent?: {
+    turnId?: string
+    sessionId?: string
+    eventType?: "question" | "tool_call" | "text" | "result"
+    toolName?: string
+    isError?: boolean
+    taskDepth?: number
+    parentMessageId?: string
+    // ... other agent-specific metadata
+  }
+}
+```
+
+### Best Practices
+
+1. **Namespace attributes** - Use `attributes.{agentId}` to avoid conflicts
+2. **Type safety** - Extend `MessageAttributes` in `src/lib/types.ts`
+3. **Minimal metadata** - Only store what's needed for rendering/grouping
+4. **Immutable updates** - Always return new objects, never mutate
+
+## Complete Example
+
+Here's a complete example integrating mutations and rendering:
+
+```typescript
+// src/agent/example/message-mutations.ts
+export const AGENT_ID = "example"
+
+export function isExampleMessage(message: Message): boolean {
+  return message.attributes?.agentId === AGENT_ID
+}
+
+export function upsertExampleMessage(
+  messages: Message[],
+  incoming: Message,
+  myUsername: string | null
+): Message[] {
+  const turnId = incoming.attributes?.example?.turnId
+  if (!turnId) return [...messages, incoming]
+
+  const existingIndex = messages.findIndex(
+    m => m.attributes?.example?.turnId === turnId
+  )
+
+  if (existingIndex === -1) {
+    return [...messages, incoming]
+  }
+
+  const updated = [...messages]
+  const existing = updated[existingIndex]
+  updated[existingIndex] = {
+    ...existing,
+    attributes: {
+      ...existing.attributes,
+      example: {
+        ...existing.attributes?.example,
+        ...incoming.attributes?.example,
+        events: [
+          ...(existing.attributes?.example?.events || []),
+          incoming.attributes?.example?.event,
+        ],
+      },
+    },
+  }
+  return updated
+}
+```
+
+```typescript
+// src/agent/example/renderers.tsx
+import type { Message } from "../../lib/types"
+
+interface ExampleMessageProps {
+  message: Message
+  depth: number
+}
+
+export function ExampleMessage(props: ExampleMessageProps) {
+  const events = props.message.attributes?.example?.events || []
+  const isError = props.message.attributes?.example?.isError
+
+  return (
+    <div class="example-message" style={{ "padding-left": `${props.depth * 20}px` }}>
+      {isError && <div class="error-badge">Error</div>}
+      <div class="events">
+        {events.map(event => (
+          <div class="event">{event.content}</div>
+        ))}
+      </div>
+    </div>
+  )
+}
+```
+
+```typescript
+// src/agent/core/message-mutations.ts
+import { isExampleMessage, upsertExampleMessage } from "../example/message-mutations"
+
+const upsertExampleMutator: AgentMessageMutator = (
+  messages,
+  incoming,
+  myUsername
+) => {
+  if (!isExampleMessage(incoming)) return null
+  return upsertExampleMessage(messages, incoming, myUsername)
+}
+
+const AGENT_MESSAGE_MUTATORS: AgentMessageMutator[] = [
+  upsertExampleMutator,
+  // ... other mutators
+]
+```
+
+```typescript
+// src/agent/core/message-renderers.tsx
+import { ExampleMessage } from "../example/renderers"
+
+function resolveDepth(message: Message): number {
+  return message.attributes?.example?.taskDepth || 0
+}
+
+export function renderMessage(message: Message) {
+  const depth = resolveDepth(message)
+
+  if (message.attributes?.agentId === "example") {
+    return <ExampleMessage message={message} depth={depth} />
+  }
+
+  // ... other renderers
+}
+```
+
+This example shows:
+
+1. Message detection and grouping by `turnId`
+2. Event accumulation in message attributes
+3. Custom rendering with error states and depth
+4. Registration in core mutation and rendering systems

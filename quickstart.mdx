@@ -1,80 +1,179 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quickstart
+description: Get started with Groupchat in under 2 minutes. Install, authenticate, and send your first message.
 ---
 
-## Get started in three steps
+## Quick Start Guide
 
-Get your documentation site running locally and make your first customization.
+This guide will walk you through installing Groupchat, authenticating your account, joining a channel, and sending your first message—all from your terminal.
 
-### Step 1: Set up your local environment
+<Steps>
+  <Step title="Install Groupchat">
+    Install Groupchat globally using your preferred package manager:
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+    <CodeGroup>
+      ```bash npm
+      npm install -g groupchat
+      ```
 
-### Step 2: Deploy your changes
+      ```bash yarn
+      yarn global add groupchat
+      ```
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+      ```bash pnpm
+      pnpm add -g groupchat
+      ```
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+      ```bash bun
+      bun add -g groupchat
+      ```
+    </CodeGroup>
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+    <Tip>
+      Make sure you have Node.js 18+ or Bun 1.0+ installed on your system.
+    </Tip>
+  </Step>
 
-### Step 3: Go live
+  <Step title="Launch Groupchat">
+    Run the `groupchat` command to launch the application:
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+    ```bash
+    groupchat
+    ```
 
-## Next steps
+    On first launch, the terminal will clear and display the login screen.
+  </Step>
 
-Now that you have your docs running, explore these key features:
+  <Step title="Authenticate via browser">
+    Since this is your first time running Groupchat, you'll need to authenticate:
+
+    1. The app will automatically open your browser to `https://app.groupchatty.com/auth/cli`
+    2. A local authentication server will start on `http://localhost:8080` (or another port in the 8080-8099 range)
+    3. Complete the authentication flow in your browser
+    4. Once authenticated, you'll see a success message in the browser
+    5. Return to your terminal—you're now logged in!
+
+    <Note>
+      Your authentication token is securely stored in your system's keychain and will persist across sessions.
+    </Note>
+  </Step>
+
+  <Step title="Navigate to channels">
+    After authentication, you'll see the main menu. The menu displays:
+    - Your available channels
+    - Direct messages
+    - Unread message counts
+    - Online presence indicators
+
+    Use keyboard shortcuts to navigate:
+    - **Arrow keys** or **j/k** to move through the list
+    - **Enter** to select a channel
+    - **ESC** to return to the menu from any screen
+  </Step>
+
+  <Step title="Join or create a channel">
+    To join an existing channel:
+    1. Navigate to the channel in the menu
+    2. Press **Enter** to open it
+
+    To create a new channel:
+    1. Press **c** from the menu (or navigate to "Create Channel")
+    2. Enter the channel name
+    3. Press **Enter** to create and join
+  </Step>
+
+  <Step title="Send your first message">
+    Once in a channel:
+    1. Type your message in the input field at the bottom
+    2. Press **Enter** to send
+    3. Your message appears instantly with real-time delivery
+
+    ```
+    [10:24 AM] you: Hello from the terminal!
+    ```
+
+    <Tip>
+      Messages support markdown formatting, code blocks, and inline code.
+    </Tip>
+  </Step>
+
+  <Step title="Try the Claude agent">
+    Invoke Claude in any channel using the `/claude` command:
+
+    ```
+    /claude what is the capital of France?
+    ```
+
+    Claude will respond inline with full context from the conversation. You can also give Claude more complex tasks:
+
+    ```
+    /claude analyze this error and suggest a fix: [paste your error]
+    ```
+
+    Claude has access to:
+    - Read files in your project
+    - Execute commands
+    - Search documentation
+    - Answer questions with full context
+
+    <Note>
+      Claude runs with tool use capabilities, meaning it can perform actions beyond just answering questions.
+    </Note>
+  </Step>
+</Steps>
+
+## Essential Keyboard Shortcuts
+
+Here are the most important shortcuts to get you started:
+
+| Shortcut | Action |
+|----------|--------|
+| **ESC** | Return to menu |
+| **Ctrl+C** | Exit (press twice) |
+| **Ctrl+O** | Logout |
+| **↑/↓** or **j/k** | Navigate lists |
+| **Enter** | Select/Send |
+| **c** | Create channel (from menu) |
+
+## What's Next?
 
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card title="Features" icon="stars" href="/features/messaging">
+    Explore all features including DMs, presence, and more
+  </Card>
+  <Card title="Commands" icon="terminal" href="/commands/overview">
+    Learn all keyboard shortcuts and slash commands
+  </Card>
+  <Card title="Using Claude" icon="robot" href="/commands/claude">
+    Deep dive into Claude's capabilities and tool use
+  </Card>
+  <Card title="Configuration" icon="gear" href="/configuration/environment">
+    Customize your Groupchat experience
+  </Card>
 </CardGroup>
 
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>
+## Troubleshooting
+
+### Browser doesn't open automatically
+
+If the browser doesn't open during authentication, manually visit:
+
+```
+https://app.groupchatty.com/auth/cli?state=<state>&redirect_uri=http://localhost:8080/callback
+```
+
+The state parameter and redirect URI will be displayed in your terminal.
+
+### Authentication times out
+
+The authentication server times out after 5 minutes. If you see a timeout error:
+1. Exit Groupchat (**Ctrl+C** twice)
+2. Run `groupchat` again to restart the auth flow
+
+### Can't exit the application
+
+Press **Ctrl+C** twice within 3 seconds to exit Groupchat. You'll see a status message after the first press:
+
+```
+Press Ctrl+C again to exit
+```

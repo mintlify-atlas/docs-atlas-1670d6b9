@@ -1,0 +1,324 @@
+---
+title: Adding Agents
+description: Complete guide to integrating new local agents into Groupchat CLI
+---
+
+This guide walks you through adding a new local agent to Groupchat CLI. Agents are integrated components that provide interactive functionality like code assistance, AI chat, or custom tools.
+
+## Architecture Overview
+
+The agent system consists of several components:
+
+- **createChatViewBase()** - Owns active-agent lifecycle, input mode state, `/exit`, and key handling
+- **createLocalAgentSessions()** - The agent registry consumed by the base
+- **message-mutations.ts** - Normalizes/condenses inbound messages for channels and DMs
+- **message-renderers.tsx** - Maps message records to agent-specific UI components
+
+Once your agent is registered and available, the shared UI automatically handles mode transitions and routing.
+
+## Integration Checklist
+
+Adding an agent requires changes across multiple files:
+
+1. Session adapter (`src/agent/{agent}/session.ts`)
+2. Session registration (`src/agent/core/local-agent-sessions.ts`)
+3. Runtime capability detection (`src/lib/runtime-capabilities.ts`)
+4. Enter command (`src/lib/commands.ts`)
+5. Display metadata (`src/lib/constants.ts`)
+6. Message mutation routing (`src/agent/core/message-mutations.ts`)
+7. Message rendering routing (`src/agent/core/message-renderers.tsx`)
+8. Types/tests as needed
+
+## Step-by-Step Integration
+
+<Steps>
+
+### Implement Session Adapter
+
+Create `src/agent/{agent}/session.ts` and expose an API that implements the `LocalAgentSession` interface.
+
+**Required TypeScript interface:**
+
+```typescript
+export type LocalAgentSession = {
+  isActive: Accessor<boolean>
+  isConnecting: Accessor<boolean>
+  messages: Accessor<Message[]>
+  start: () => Promise<void>
+  stop: (reason?: string) => void
+  sendMessage: (content: string, username: string) => Promise<void>
+  appendError: (message: string) => void
+  interrupt?: () => void
+  pendingAction?: () => AgentPendingAction | null
+  pendingActions?: () => AgentPendingAction[]
+  respondToPendingAction?: (behavior: AgentDecision) => Promise<void>
+  onEvent?: (callback: (event: AgentEvent) => void) => void
+  findPendingActionMessageId?: (requestId: string) => string | null
+  isThinkingMessage?: (message: Message) => boolean
+}
+```
+
+**Required behavior:**
+
+- `start()` - Initialize the agent session
+- `stop(reason?)` - Clean up and stop the agent session
+- `sendMessage(content, username)` - Send user message to the agent
+- `isActive()` - Return whether the agent is currently active
+- `isConnecting()` - Return whether the agent is connecting
+- `messages()` - Return the current message array
+- `appendError(message)` - Add an error message to the session
+
+**Optional but recommended:**
+
+- `interrupt()` - Cancel the current agent operation
+- `pendingAction()` - Return current pending action requiring user approval
+- `pendingActions()` - Return all pending actions
+- `respondToPendingAction(behavior)` - Respond to a pending action with "allow" or "deny"
+- `onEvent(callback)` - Subscribe to agent events for streaming updates
+- `findPendingActionMessageId(requestId)` - Find message ID for a pending action
+- `isThinkingMessage(message)` - Identify temporary status messages
+
+**Agent event types:**
+
+```typescript
+export type AgentEvent = {
+  agentId: string
+  turnId: string
+  sessionId?: string
+  event: "question" | "tool_call" | "text" | "result"
+  content: string
+  toolName?: string
+  isError?: boolean
+}
+```
+
+### Register in Local Agent Registry
+
+Edit `src/agent/core/local-agent-sessions.ts` to register your agent:
+
+```typescript
+import { createYourAgentSession } from "../youragent/session"
+import { AGENT_ID as YOUR_AGENT_ID } from "../youragent/constants"
+
+export function createLocalAgentSessions(
+  runtimeCapabilities: RuntimeCapabilities
+): LocalAgentSessionEntry[] {
+  const yourAgent = createYourAgentSession()
+
+  const sessions: LocalAgentSessionEntry[] = [
+    // ... existing agents
+    {
+      id: YOUR_AGENT_ID,
+      isAvailable: () => runtimeCapabilities.hasYourAgent,
+      session: {
+        isActive: yourAgent.isActive,
+        isConnecting: yourAgent.isConnecting,
+        messages: yourAgent.messages,
+        start: yourAgent.start,
+        stop: yourAgent.stop,
+        sendMessage: yourAgent.sendMessage,
+        appendError: yourAgent.appendError,
+        interrupt: yourAgent.interrupt,
+        pendingAction: yourAgent.pendingAction,
+        pendingActions: yourAgent.pendingActions,
+        respondToPendingAction: yourAgent.respondToPendingAction,
+        onEvent: yourAgent.onEvent,
+        findPendingActionMessageId: yourAgent.findPendingActionMessageId,
+        isThinkingMessage: yourAgent.isThinkingMessage,
+      },
+    },
+  ]
+
+  return sessions
+}
+```
+
+**LocalAgentSessionEntry interface:**
+
+```typescript
+export type LocalAgentSessionEntry = {
+  id: string
+  session: LocalAgentSession
+  isAvailable: () => boolean
+}
+```
+
+### Add Runtime Capability Detection
+
+Edit `src/lib/runtime-capabilities.ts` to detect if your agent is available:
+
+```typescript
+export type RuntimeCapabilities = {
+  // ... existing capabilities
+  yourAgentPath: string | null
+  hasYourAgent: boolean
+}
+
+export async function detectRuntimeCapabilities(): Promise<RuntimeCapabilities> {
+  const yourAgentPath = await Bun.which("youragent")
+
+  return {
+    // ... existing capabilities
+    yourAgentPath,
+    hasYourAgent: yourAgentPath !== null,
+  }
+}
+```
+
+Use `Bun.which(...)` to detect binary/tool availability.
+
+### Add Enter Command
+
+Edit `src/lib/commands.ts` to add a command for entering your agent mode:
+
+```typescript
+import { getAgentEnterCommandEvent } from "./commands"
+import { AGENT_ID as YOUR_AGENT_ID } from "../agent/youragent/constants"
+
+export const COMMANDS: Command[] = [
+  // ... existing commands
+  {
+    name: "/youragent",
+    syntax: "/youragent",
+    description: "Enter YourAgent mode",
+    privateOnly: false,
+    adminOnly: false,
+    parameters: [],
+    eventType: getAgentEnterCommandEvent(YOUR_AGENT_ID),
+  },
+]
+```
+
+The `/exit` command is generic and works for all agents using the `local_agent_exit` event type.
+
+### Add UI Display Metadata
+
+Edit `src/lib/constants.ts` to configure how your agent appears in the UI:
+
+```typescript
+export const AGENT_CONFIG = {
+  // ... existing agents
+  youragent: {
+    displayName: "YourAgent",
+    color: "#FF6B6B", // Your agent's accent color
+  },
+}
+```
+
+This metadata drives labels and accents in input mode and event summaries.
+
+### Add Inbound Mutation Logic
+
+If your agent events need grouping or condensing, create a mutator module and register it in `src/agent/core/message-mutations.ts`.
+
+**Create your mutator:**
+
+```typescript
+// src/agent/youragent/message-mutations.ts
+import type { Message } from "../../lib/types"
+
+export const AGENT_ID = "youragent"
+
+export function isYourAgentMessage(message: Message): boolean {
+  return message.attributes?.agentId === AGENT_ID
+}
+
+export function upsertYourAgentMessage(
+  messages: Message[],
+  incoming: Message,
+  myUsername: string | null
+): Message[] {
+  // Implement your upsert/merge logic
+  // For example, group related events into a single message
+  return [...messages, incoming]
+}
+```
+
+**Register in core mutations:**
+
+```typescript
+// src/agent/core/message-mutations.ts
+import { isYourAgentMessage, upsertYourAgentMessage } from "../youragent/message-mutations"
+
+type AgentMessageMutator = (
+  messages: Message[],
+  incoming: Message,
+  myUsername: string | null
+) => Message[] | null
+
+const upsertYourAgentMutator: AgentMessageMutator = (messages, incoming, myUsername) => {
+  if (!isYourAgentMessage(incoming)) return null
+  return upsertYourAgentMessage(messages, incoming, myUsername)
+}
+
+const AGENT_MESSAGE_MUTATORS: AgentMessageMutator[] = [
+  // ... existing mutators
+  upsertYourAgentMutator,
+]
+```
+
+Both channel and DM ingestion paths use `upsertAgentMessage()` and `condenseAgentMessages()`, so your mutator will apply everywhere.
+
+### Add Rendering Logic
+
+If your message format needs custom UI, add renderers and optional depth resolvers in `src/agent/core/message-renderers.tsx`.
+
+**Typical additions:**
+
+- Renderer for your agent response message type
+- Renderer for your event stream message type
+- Depth resolver if you support nested sub-agent/task threads
+
+See [Message Rendering](/development/message-rendering) for detailed instructions.
+
+### Extend Shared Types
+
+Edit `src/lib/types.ts` only if you need to introduce new message shapes:
+
+- New `Message.type` variant
+- New metadata under `MessageAttributes`
+
+**Prefer namespaced metadata keys:**
+
+```typescript
+export interface MessageAttributes {
+  // ... existing attributes
+  youragent?: {
+    eventType?: string
+    toolName?: string
+    isError?: boolean
+    // ... your agent-specific metadata
+  }
+}
+```
+
+### Validate
+
+Run type checking and tests to ensure everything is wired correctly:
+
+```bash
+npm run typecheck
+npm test
+```
+
+Add or adjust tests under `test/components`, `test/lib`, and `test/pages` for new behavior.
+
+</Steps>
+
+## Current Constraints
+
+<Warning>
+  - Only one local agent can be actively controlled at a time
+  - Multiple agent-authored messages can render in the same channel/DM stream
+  - `sendAgentEvent()` currently emits protocol type `"cc"`; if you introduce a new transport-level type, update channel ingestion + renderer/mutator routing together
+</Warning>
+
+## Example: Claude Agent
+
+The Claude agent implementation serves as a reference example. Key files:
+
+- `src/agent/claude/session.ts` - Session adapter implementation
+- `src/agent/claude/claude-event-message-mutations.ts` - Message mutation logic
+- Registration in `src/agent/core/local-agent-sessions.ts:11-40`
+
+Review these files to understand a complete agent integration.
